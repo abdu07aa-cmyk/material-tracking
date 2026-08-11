@@ -32,7 +32,7 @@ body{
   color:var(--ink);
   font-family:'Inter',sans-serif;
   -webkit-font-smoothing:antialiased;
-  padding-bottom:90px;
+  padding-bottom:30px;
 }
 h1,h2,h3,.display{
   font-family:'Oswald',sans-serif;
@@ -50,11 +50,6 @@ h1,h2,h3,.display{
   display:flex; align-items:center; justify-content:space-between;
   box-shadow:var(--shadow);
 }
-.appbar .brand{display:flex; align-items:center; gap:10px;}
-.appbar .brand .tag{
-  background:var(--amber); color:var(--ink); font-weight:700; font-size:11px;
-  padding:3px 7px; border-radius:4px; font-family:'Oswald',sans-serif; letter-spacing:.05em;
-}
 .appbar h1{font-size:16px; margin:0; font-weight:600; letter-spacing:.04em;}
 .appbar .sub{font-size:10px; color:#aeb6bf; letter-spacing:.08em; margin-top:1px;}
 .icon-btn{
@@ -70,13 +65,18 @@ h1,h2,h3,.display{
   overflow-x:auto;
 }
 .tabbar button{
-  flex:1; min-width:110px; border:none; background:transparent; padding:12px 8px;
-  font-family:'Oswald',sans-serif; font-size:12px; letter-spacing:.05em; text-transform:uppercase;
+  flex:1; min-width:98px; border:none; background:transparent; padding:12px 6px;
+  font-family:'Oswald',sans-serif; font-size:11px; letter-spacing:.04em; text-transform:uppercase;
   color:var(--muted); cursor:pointer; border-bottom:3px solid transparent; white-space:nowrap;
 }
 .tabbar button.active{color:var(--steel-dark); border-bottom-color:var(--steel);}
 
-.wrap{max-width:1100px; margin:0 auto; padding:16px;}
+.wrap{max-width:1200px; margin:0 auto; padding:16px;}
+.hidden{display:none !important;}
+
+.tab-header{margin-bottom:14px;}
+.tab-header h2{font-size:16px; margin:0 0 3px;}
+.tab-header p{font-size:12px; color:var(--muted); margin:0;}
 
 /* ===== Dashboard cards ===== */
 .stat-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:18px;}
@@ -92,11 +92,9 @@ h1,h2,h3,.display{
 .stat-card.accent-green{border-left:4px solid var(--green);}
 .stat-card.accent-red{border-left:4px solid var(--red);}
 
-/* ===== Pipeline / signature element ===== */
+/* ===== Pipeline ===== */
 .pipeline{display:flex; align-items:center; gap:4px; margin:6px 0 2px;}
-.pipeline .seg{
-  flex:1; height:6px; border-radius:3px; background:var(--line); position:relative;
-}
+.pipeline .seg{flex:1; height:6px; border-radius:3px; background:var(--line);}
 .pipeline .seg.done{background:var(--steel);}
 .pipeline .seg.current{background:var(--amber);}
 .pipeline-labels{display:flex; justify-content:space-between; font-size:9px; color:var(--muted); letter-spacing:.03em; text-transform:uppercase; margin-bottom:10px;}
@@ -117,8 +115,9 @@ h1,h2,h3,.display{
 .btn-ghost{background:var(--paper-2); color:var(--ink); border:1px solid var(--line);}
 .btn-ghost:hover{background:#efece5;}
 .btn-danger{background:var(--red); color:#fff;}
+select.btn-ghost{font-weight:500;}
 
-/* ===== Cards list (mobile) ===== */
+/* ===== Cards list ===== */
 .record-card{
   background:var(--paper-2); border:1px solid var(--line); border-radius:var(--radius);
   padding:14px; margin-bottom:10px; box-shadow:var(--shadow); cursor:pointer;
@@ -139,12 +138,9 @@ h1,h2,h3,.display{
 .badge-red{background:var(--red-bg); color:var(--red);}
 .badge-grey{background:#eceae4; color:var(--muted);}
 
-.empty{
-  text-align:center; padding:50px 20px; color:var(--muted);
-}
+.empty{text-align:center; padding:50px 20px; color:var(--muted);}
 .empty .glyph{font-size:34px; margin-bottom:10px;}
 
-/* ===== FAB ===== */
 .fab{
   position:fixed; right:18px; bottom:22px; z-index:45;
   background:var(--steel); color:#fff; border:none; border-radius:50%;
@@ -161,17 +157,18 @@ h1,h2,h3,.display{
 .modal-backdrop.open{display:flex;}
 .modal{
   background:var(--paper); width:100%; max-width:640px; max-height:92vh; overflow-y:auto;
-  border-radius:16px 16px 0 0; padding:0;
+  border-radius:16px 16px 0 0;
 }
 @media(min-width:640px){
   .modal-backdrop{align-items:center;}
   .modal{border-radius:16px; margin:20px;}
 }
 .modal-head{
-  position:sticky; top:0; background:var(--ink); color:#fff; padding:16px 18px;
+  position:sticky; top:0; color:#fff; padding:16px 18px;
   display:flex; justify-content:space-between; align-items:center; z-index:2;
 }
 .modal-head h2{font-size:15px; margin:0;}
+.modal-head .eyebrow{font-size:10px; opacity:.75; letter-spacing:.06em; text-transform:uppercase;}
 .modal-body{padding:18px;}
 .section-title{
   font-family:'Oswald'; font-size:12px; text-transform:uppercase; letter-spacing:.06em;
@@ -180,6 +177,11 @@ h1,h2,h3,.display{
 }
 .section-title:first-child{margin-top:0;}
 .section-title .dot{width:8px; height:8px; border-radius:50%; background:var(--steel);}
+.readonly-block{
+  background:#eef1ee; border:1px dashed var(--line); border-radius:8px; padding:10px 12px; margin-bottom:14px;
+  font-size:12px; color:var(--muted);
+}
+.readonly-block b{color:var(--ink);}
 .field-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
 @media(max-width:420px){.field-grid{grid-template-columns:1fr;}}
 .field{margin-bottom:10px;}
@@ -198,13 +200,32 @@ h1,h2,h3,.display{
 .setup-card h2{font-size:18px; margin:0 0 4px;}
 .setup-card p{color:var(--muted); font-size:13px; line-height:1.5; margin:0 0 20px;}
 .setup-card .field{margin-bottom:14px;}
-.hidden{display:none !important;}
+
 .toast{
   position:fixed; bottom:20px; left:50%; transform:translateX(-50%); z-index:80;
   background:var(--ink); color:#fff; padding:11px 18px; border-radius:8px; font-size:13px;
   box-shadow:var(--shadow); opacity:0; pointer-events:none; transition:opacity .25s, transform .25s;
 }
 .toast.show{opacity:1; transform:translateX(-50%) translateY(-4px);}
+
+/* ===== Report table (mirrors the original spreadsheet) ===== */
+.report-scroll{overflow-x:auto; border:1px solid var(--line); border-radius:var(--radius); background:var(--paper-2); box-shadow:var(--shadow);}
+table.report{border-collapse:collapse; width:100%; min-width:1150px; font-size:12px;}
+table.report th, table.report td{border:1px solid var(--line); padding:7px 9px; text-align:left; white-space:nowrap;}
+table.report thead tr.grp th{
+  background:var(--ink); color:#fff; text-align:center; font-family:'Oswald'; letter-spacing:.05em; font-size:11px; text-transform:uppercase;
+}
+table.report thead tr.subgrp th{
+  background:#3a4855; color:#fff; text-align:center; font-family:'Oswald'; letter-spacing:.04em; font-size:10px; text-transform:uppercase;
+}
+table.report thead tr.cols th{
+  background:#eef1ee; color:var(--ink); font-size:10.5px; text-transform:uppercase; letter-spacing:.02em; position:sticky; top:0;
+}
+table.report tbody td{font-family:'JetBrains Mono',monospace; font-size:11.5px;}
+table.report tbody tr:nth-child(even){background:#fafaf8;}
+.col-warehouse{border-left:3px solid var(--steel) !important;}
+.col-qc{border-left:3px solid var(--amber) !important;}
+.col-supply{border-left:3px solid var(--green) !important;}
 </style>
 </head>
 <body>
@@ -230,11 +251,9 @@ h1,h2,h3,.display{
 <!-- ============ APP ============ -->
 <div id="app" class="hidden">
   <div class="appbar">
-    <div class="brand">
-      <div>
-        <h1>Material Tracking</h1>
-        <div class="sub">DATA ORDER &amp; STATUS</div>
-      </div>
+    <div>
+      <h1>Material Tracking</h1>
+      <div class="sub">DATA ORDER AND STATUS</div>
     </div>
     <div style="display:flex;gap:8px;">
       <button class="icon-btn" title="Ekspor CSV" onclick="exportCSV()">⭳</button>
@@ -244,12 +263,15 @@ h1,h2,h3,.display{
 
   <div class="tabbar">
     <button class="tab-btn active" data-tab="dashboard" onclick="switchTab('dashboard')">Dashboard</button>
-    <button class="tab-btn" data-tab="all" onclick="switchTab('all')">Semua Data</button>
+    <button class="tab-btn" data-tab="gudang" onclick="switchTab('gudang')">Gudang</button>
+    <button class="tab-btn" data-tab="qc" onclick="switchTab('qc')">QC</button>
+    <button class="tab-btn" data-tab="suplai" onclick="switchTab('suplai')">Suplai Material</button>
+    <button class="tab-btn" data-tab="laporan" onclick="switchTab('laporan')">Laporan</button>
   </div>
 
   <div class="wrap">
 
-    <!-- DASHBOARD -->
+    <!-- ===== DASHBOARD ===== -->
     <div id="tab-dashboard">
       <div class="stat-grid">
         <div class="stat-card accent-steel"><div class="num mono" id="statTotal">0</div><div class="label">Total Order</div></div>
@@ -261,78 +283,170 @@ h1,h2,h3,.display{
       <div id="recentList"></div>
     </div>
 
-    <!-- ALL DATA -->
-    <div id="tab-all" class="hidden">
+    <!-- ===== GUDANG (WAREHOUSE / PI DATA) ===== -->
+    <div id="tab-gudang" class="hidden">
+      <div class="tab-header">
+        <h2>Gudang — PI Data</h2>
+        <p>Input order baru masuk. Data ini menjadi dasar bagi tim QC dan Suplai Material.</p>
+      </div>
       <div class="toolbar">
-        <div class="search">🔍<input id="searchInput" placeholder="Cari PI Spec / No SJ-DO..." oninput="renderList()"></div>
-        <select id="filterStatus" class="btn btn-ghost" onchange="renderList()" style="min-width:150px;">
-          <option value="">Semua Status</option>
-          <option value="warehouse">Tahap: Warehouse</option>
-          <option value="qc">Tahap: QC</option>
-          <option value="supply">Tahap: Supply</option>
+        <div class="search">🔍<input id="searchGudang" placeholder="Cari PI Spec / No SJ-DO..." oninput="renderGudang()"></div>
+      </div>
+      <div id="listGudang"></div>
+    </div>
+
+    <!-- ===== QC (QUALITY CONTROL / IN COMING QC) ===== -->
+    <div id="tab-qc" class="hidden">
+      <div class="tab-header">
+        <h2>Quality Control — In Coming QC</h2>
+        <p>Pilih order dari Gudang untuk diisi hasil pemeriksaannya.</p>
+      </div>
+      <div class="toolbar">
+        <div class="search">🔍<input id="searchQc" placeholder="Cari PI Spec / No SJ-DO..." oninput="renderQc()"></div>
+        <select id="filterQc" class="btn btn-ghost" onchange="renderQc()" style="min-width:150px;">
+          <option value="belum">Belum Diisi QC</option>
+          <option value="semua">Semua Order</option>
         </select>
       </div>
-      <div id="listContainer"></div>
+      <div id="listQc"></div>
+    </div>
+
+    <!-- ===== SUPLAI MATERIAL ===== -->
+    <div id="tab-suplai" class="hidden">
+      <div class="tab-header">
+        <h2>Suplai Material</h2>
+        <p>Pilih order yang sudah lulus QC untuk diisi data pengiriman ke suplai.</p>
+      </div>
+      <div class="toolbar">
+        <div class="search">🔍<input id="searchSuplai" placeholder="Cari PI Spec / No SJ-DO..." oninput="renderSuplai()"></div>
+        <select id="filterSuplai" class="btn btn-ghost" onchange="renderSuplai()" style="min-width:150px;">
+          <option value="belum">Belum Diisi Suplai</option>
+          <option value="semua">Semua Order</option>
+        </select>
+      </div>
+      <div id="listSuplai"></div>
+    </div>
+
+    <!-- ===== LAPORAN (COMBINED TABLE, MATCHES ORIGINAL SHEET) ===== -->
+    <div id="tab-laporan" class="hidden">
+      <div class="tab-header">
+        <h2>Laporan — Data Order and Status</h2>
+        <p>Tabel gabungan dari Gudang, QC, dan Suplai Material — layout mengikuti format laporan.</p>
+      </div>
+      <div class="toolbar">
+        <div class="search">🔍<input id="searchLaporan" placeholder="Cari PI Spec / No SJ-DO..." oninput="renderLaporan()"></div>
+        <button class="btn btn-ghost" onclick="exportCSV()">⭳ Ekspor CSV</button>
+      </div>
+      <div class="report-scroll">
+        <table class="report" id="reportTable">
+          <thead>
+            <tr class="grp">
+              <th colspan="7">Wharehouse</th>
+              <th colspan="5">Quality Control</th>
+              <th colspan="4">Suplay Material</th>
+            </tr>
+            <tr class="subgrp">
+              <th colspan="7">PI Data</th>
+              <th colspan="5">In Coming QC</th>
+              <th colspan="4"></th>
+            </tr>
+            <tr class="cols">
+              <th class="col-warehouse">PI Specification</th>
+              <th>SJ/DO No</th>
+              <th>SJ/DO Date</th>
+              <th>SJ DO Qty</th>
+              <th>SJ/DO Unit</th>
+              <th>Delivery Date to QC</th>
+              <th>Status Material</th>
+              <th class="col-qc">Infection Date</th>
+              <th>Good Material</th>
+              <th>N.G Material</th>
+              <th>Status</th>
+              <th>Delivery Suplay Material</th>
+              <th class="col-supply">Suplay Date</th>
+              <th>Suplay Qty</th>
+              <th>Total Material</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="reportBody"></tbody>
+        </table>
+      </div>
     </div>
 
   </div>
 </div>
 
-<button class="fab hidden" id="fabAdd" onclick="openForm()">+</button>
+<button class="fab hidden" id="fabAdd" onclick="openForm('gudang')">+</button>
 
-<!-- ============ FORM MODAL ============ -->
+<!-- ============ FORM MODAL (dynamic: gudang / qc / suplai) ============ -->
 <div class="modal-backdrop" id="formModal">
   <div class="modal">
-    <div class="modal-head">
-      <h2 id="formTitle">Tambah Data Order</h2>
+    <div class="modal-head" id="modalHead">
+      <div>
+        <div class="eyebrow" id="formEyebrow">Gudang</div>
+        <h2 id="formTitle">Tambah Data Order</h2>
+      </div>
       <button class="icon-btn" onclick="closeForm()">✕</button>
     </div>
     <div class="modal-body">
       <input type="hidden" id="recordId">
+      <input type="hidden" id="formMode">
 
-      <div class="section-title"><span class="dot" style="background:var(--steel)"></span>Warehouse — PI Data</div>
-      <div class="field"><label>PI Specification</label><input id="f_pi_specification"></div>
-      <div class="field-grid">
-        <div class="field"><label>SJ / DO No</label><input id="f_sj_do_no"></div>
-        <div class="field"><label>SJ / DO Date</label><input type="date" id="f_sj_do_date"></div>
-        <div class="field"><label>SJ / DO Qty</label><input type="number" id="f_sj_do_qty"></div>
-        <div class="field"><label>SJ / DO Unit</label><input id="f_sj_do_unit" placeholder="pcs / kg / roll"></div>
-        <div class="field"><label>Delivery Date to QC</label><input type="date" id="f_delivery_date_to_qc"></div>
-        <div class="field"><label>Status Material</label>
-          <select id="f_status_material">
-            <option value="Menunggu">Menunggu</option>
-            <option value="Terkirim">Terkirim ke QC</option>
-            <option value="Selesai">Selesai</option>
-          </select>
+      <div id="refBlock" class="readonly-block hidden"></div>
+
+      <!-- GUDANG FIELDS -->
+      <div id="block-gudang">
+        <div class="section-title"><span class="dot" style="background:var(--steel)"></span>Wharehouse — PI Data</div>
+        <div class="field"><label>PI Specification</label><input id="f_pi_specification"></div>
+        <div class="field-grid">
+          <div class="field"><label>SJ/DO No</label><input id="f_sj_do_no"></div>
+          <div class="field"><label>SJ/DO Date</label><input type="date" id="f_sj_do_date"></div>
+          <div class="field"><label>SJ DO Qty</label><input type="number" id="f_sj_do_qty"></div>
+          <div class="field"><label>SJ/DO Unit</label><input id="f_sj_do_unit" placeholder="pcs / kg / roll"></div>
+          <div class="field"><label>Delivery Date to QC</label><input type="date" id="f_delivery_date_to_qc"></div>
+          <div class="field"><label>Status Material</label>
+            <select id="f_status_material">
+              <option value="Menunggu">Menunggu</option>
+              <option value="Terkirim">Terkirim ke QC</option>
+              <option value="Selesai">Selesai</option>
+            </select>
+          </div>
         </div>
       </div>
 
-      <div class="section-title"><span class="dot" style="background:var(--amber)"></span>Quality Control — Incoming QC</div>
-      <div class="field-grid">
-        <div class="field"><label>Inspection Date</label><input type="date" id="f_inspection_date"></div>
-        <div class="field"><label>Good Material</label><input type="number" id="f_good_material"></div>
-        <div class="field"><label>N.G Material</label><input type="number" id="f_ng_material"></div>
-        <div class="field"><label>QC Status</label>
-          <select id="f_qc_status">
-            <option value="Proses">Proses</option>
-            <option value="Lulus">Lulus</option>
-            <option value="Ditolak">Ditolak</option>
-          </select>
+      <!-- QC FIELDS -->
+      <div id="block-qc">
+        <div class="section-title"><span class="dot" style="background:var(--amber)"></span>Quality Control — In Coming QC</div>
+        <div class="field-grid">
+          <div class="field"><label>Infection Date</label><input type="date" id="f_inspection_date"></div>
+          <div class="field"><label>Good Material</label><input type="number" id="f_good_material"></div>
+          <div class="field"><label>N.G Material</label><input type="number" id="f_ng_material"></div>
+          <div class="field"><label>Status</label>
+            <select id="f_qc_status">
+              <option value="Proses">Proses</option>
+              <option value="Lulus">Lulus</option>
+              <option value="Ditolak">Ditolak</option>
+            </select>
+          </div>
+          <div class="field" style="grid-column:1/-1;"><label>Delivery Suplay Material</label><input type="date" id="f_delivery_supply_material"></div>
         </div>
-        <div class="field" style="grid-column:1/-1;"><label>Delivery Supply Material</label><input type="date" id="f_delivery_supply_material"></div>
       </div>
 
-      <div class="section-title"><span class="dot" style="background:var(--green)"></span>Supply Material</div>
-      <div class="field-grid">
-        <div class="field"><label>Supply Date</label><input type="date" id="f_supply_date"></div>
-        <div class="field"><label>Supply Qty</label><input type="number" id="f_supply_qty"></div>
-        <div class="field"><label>Total Material</label><input type="number" id="f_total_material"></div>
-        <div class="field"><label>Status</label>
-          <select id="f_supply_status">
-            <option value="Tertunda">Tertunda</option>
-            <option value="Sebagian">Sebagian</option>
-            <option value="Diterima">Diterima</option>
-          </select>
+      <!-- SUPLAI FIELDS -->
+      <div id="block-suplai">
+        <div class="section-title"><span class="dot" style="background:var(--green)"></span>Suplay Material</div>
+        <div class="field-grid">
+          <div class="field"><label>Suplay Date</label><input type="date" id="f_supply_date"></div>
+          <div class="field"><label>Suplay Qty</label><input type="number" id="f_supply_qty"></div>
+          <div class="field"><label>Total Material</label><input type="number" id="f_total_material"></div>
+          <div class="field"><label>Status</label>
+            <select id="f_supply_status">
+              <option value="Tertunda">Tertunda</option>
+              <option value="Sebagian">Sebagian</option>
+              <option value="Diterima">Diterima</option>
+            </select>
+          </div>
         </div>
       </div>
     </div>
@@ -350,6 +464,9 @@ h1,h2,h3,.display{
 let supabaseClient = null;
 let records = [];
 const TABLE = 'material_tracking';
+
+const MODE_COLOR = { gudang:'#2b6777', qc:'#e0932e', suplai:'#2f8f5b' };
+const MODE_LABEL = { gudang:'Gudang', qc:'Quality Control', suplai:'Suplai Material' };
 
 /* ---------- Setup / connection ---------- */
 function initSupabase(){
@@ -387,9 +504,14 @@ function openSettings(){
 /* ---------- Tabs ---------- */
 function switchTab(tab){
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
-  document.getElementById('tab-dashboard').classList.toggle('hidden', tab!=='dashboard');
-  document.getElementById('tab-all').classList.toggle('hidden', tab!=='all');
-  if(tab==='all') renderList();
+  ['dashboard','gudang','qc','suplai','laporan'].forEach(t=>{
+    document.getElementById('tab-'+t).classList.toggle('hidden', t!==tab);
+  });
+  document.getElementById('fabAdd').classList.toggle('hidden', tab==='dashboard' || tab==='laporan');
+  if(tab==='gudang') renderGudang();
+  if(tab==='qc') renderQc();
+  if(tab==='suplai') renderSuplai();
+  if(tab==='laporan') renderLaporan();
 }
 
 /* ---------- Data ---------- */
@@ -398,72 +520,156 @@ async function loadRecords(){
   if(error){ showToast('Gagal memuat data: '+error.message); return; }
   records = data || [];
   renderDashboard();
-  renderList();
+  renderGudang();
+  renderQc();
+  renderSuplai();
+  renderLaporan();
 }
 
+function qcFilled(r){ return !!(r.inspection_date || (r.qc_status && r.qc_status!=='Proses') || r.good_material!=null || r.ng_material!=null); }
+function suplaiFilled(r){ return !!(r.supply_date || r.supply_qty!=null || r.total_material!=null || (r.supply_status && r.supply_status!=='Tertunda')); }
+
 function stageOf(r){
-  if(r.supply_status === 'Diterima') return 'supply';
-  if(r.qc_status === 'Lulus' || r.qc_status === 'Ditolak') return 'qc-done';
-  if(r.status_material === 'Terkirim' || r.inspection_date) return 'qc';
+  if(suplaiFilled(r) && r.supply_status==='Diterima') return 'supply';
+  if(qcFilled(r)) return 'qc-done';
   return 'warehouse';
 }
 
+/* ---------- Dashboard ---------- */
 function renderDashboard(){
   document.getElementById('statTotal').textContent = records.length;
-  document.getElementById('statPending').textContent = records.filter(r=>!r.qc_status || r.qc_status==='Proses').length;
+  document.getElementById('statPending').textContent = records.filter(r=>!qcFilled(r)).length;
   document.getElementById('statGood').textContent = records.filter(r=>r.qc_status==='Lulus').length;
   document.getElementById('statNg').textContent = records.filter(r=>r.qc_status==='Ditolak').length;
 
   const recent = records.slice(0,5);
   const el = document.getElementById('recentList');
   if(recent.length===0){
-    el.innerHTML = `<div class="empty"><div class="glyph">📦</div>Belum ada data. Ketuk tombol + untuk menambah order pertama.</div>`;
+    el.innerHTML = `<div class="empty"><div class="glyph">📦</div>Belum ada data. Buka menu Gudang untuk menambah order pertama.</div>`;
     return;
   }
-  el.innerHTML = recent.map(cardHTML).join('');
+  el.innerHTML = recent.map(r=>cardHTML(r,'laporan')).join('');
 }
 
-function renderList(){
-  const q = (document.getElementById('searchInput')?.value || '').toLowerCase();
-  const filter = document.getElementById('filterStatus')?.value || '';
-  let filtered = records.filter(r=>{
-    const matchQ = !q || (r.pi_specification||'').toLowerCase().includes(q) || (r.sj_do_no||'').toLowerCase().includes(q);
-    const matchStage = !filter || stageOf(r).startsWith(filter);
-    return matchQ && matchStage;
-  });
-  const el = document.getElementById('listContainer');
+/* ---------- Gudang list ---------- */
+function renderGudang(){
+  const q = (document.getElementById('searchGudang')?.value || '').toLowerCase();
+  const filtered = records.filter(r=> !q || (r.pi_specification||'').toLowerCase().includes(q) || (r.sj_do_no||'').toLowerCase().includes(q));
+  const el = document.getElementById('listGudang');
   if(!el) return;
   if(filtered.length===0){
-    el.innerHTML = `<div class="empty"><div class="glyph">🔍</div>Tidak ada data yang cocok.</div>`;
+    el.innerHTML = `<div class="empty"><div class="glyph">🏭</div>Belum ada order. Ketuk tombol + untuk menambah order baru.</div>`;
     return;
   }
-  el.innerHTML = filtered.map(cardHTML).join('');
+  el.innerHTML = filtered.map(r=>cardHTML(r,'gudang')).join('');
 }
 
+/* ---------- QC list ---------- */
+function renderQc(){
+  const q = (document.getElementById('searchQc')?.value || '').toLowerCase();
+  const filter = document.getElementById('filterQc')?.value || 'belum';
+  let filtered = records.filter(r=> !q || (r.pi_specification||'').toLowerCase().includes(q) || (r.sj_do_no||'').toLowerCase().includes(q));
+  if(filter==='belum') filtered = filtered.filter(r=>!qcFilled(r));
+  const el = document.getElementById('listQc');
+  if(!el) return;
+  if(filtered.length===0){
+    el.innerHTML = `<div class="empty"><div class="glyph">✅</div>Tidak ada order yang perlu diisi QC saat ini.</div>`;
+    return;
+  }
+  el.innerHTML = filtered.map(r=>cardHTML(r,'qc')).join('');
+}
+
+/* ---------- Suplai list ---------- */
+function renderSuplai(){
+  const q = (document.getElementById('searchSuplai')?.value || '').toLowerCase();
+  const filter = document.getElementById('filterSuplai')?.value || 'belum';
+  let filtered = records.filter(r=> !q || (r.pi_specification||'').toLowerCase().includes(q) || (r.sj_do_no||'').toLowerCase().includes(q));
+  if(filter==='belum') filtered = filtered.filter(r=>!suplaiFilled(r));
+  const el = document.getElementById('listSuplai');
+  if(!el) return;
+  if(filtered.length===0){
+    el.innerHTML = `<div class="empty"><div class="glyph">🚚</div>Tidak ada order yang perlu diisi Suplai Material saat ini.</div>`;
+    return;
+  }
+  el.innerHTML = filtered.map(r=>cardHTML(r,'suplai')).join('');
+}
+
+/* ---------- Laporan table ---------- */
+function renderLaporan(){
+  const q = (document.getElementById('searchLaporan')?.value || '').toLowerCase();
+  const filtered = records.filter(r=> !q || (r.pi_specification||'').toLowerCase().includes(q) || (r.sj_do_no||'').toLowerCase().includes(q));
+  const body = document.getElementById('reportBody');
+  if(!body) return;
+  if(filtered.length===0){
+    body.innerHTML = `<tr><td colspan="16" style="text-align:center;color:var(--muted);font-family:'Inter';padding:30px;">Belum ada data</td></tr>`;
+    return;
+  }
+  body.innerHTML = filtered.map(r=>`
+    <tr>
+      <td class="col-warehouse">${escapeHtml(r.pi_specification||'')}</td>
+      <td>${escapeHtml(r.sj_do_no||'')}</td>
+      <td>${r.sj_do_date||''}</td>
+      <td>${r.sj_do_qty??''}</td>
+      <td>${escapeHtml(r.sj_do_unit||'')}</td>
+      <td>${r.delivery_date_to_qc||''}</td>
+      <td>${escapeHtml(r.status_material||'')}</td>
+      <td class="col-qc">${r.inspection_date||''}</td>
+      <td>${r.good_material??''}</td>
+      <td>${r.ng_material??''}</td>
+      <td>${escapeHtml(r.qc_status||'')}</td>
+      <td>${r.delivery_supply_material||''}</td>
+      <td class="col-supply">${r.supply_date||''}</td>
+      <td>${r.supply_qty??''}</td>
+      <td>${r.total_material??''}</td>
+      <td>${escapeHtml(r.supply_status||'')}</td>
+    </tr>
+  `).join('');
+}
+
+/* ---------- Shared card rendering ---------- */
 function pipelineHTML(r){
   const stage = stageOf(r);
-  const idx = stage==='warehouse'?0 : (stage==='qc'?1: (stage==='qc-done'?1.5:2));
-  const seg = i => i < idx ? 'done' : (i < idx+1 && i+1 > idx ? 'current' : '');
+  const idx = stage==='warehouse'?0.5 : (stage==='qc-done'?1.5:2.5);
   return `
   <div class="pipeline">
     <div class="seg ${idx>=1?'done':'current'}"></div>
     <div class="seg ${idx>=2?'done':(idx>=1?'current':'')}"></div>
     <div class="seg ${idx>=2?'current':''}"></div>
   </div>
-  <div class="pipeline-labels"><span>Warehouse</span><span>QC</span><span>Supply</span></div>`;
+  <div class="pipeline-labels"><span>Gudang</span><span>QC</span><span>Suplai</span></div>`;
 }
 
 function statusBadge(r){
   if(r.qc_status === 'Ditolak') return `<span class="badge badge-red">NG / Ditolak</span>`;
   if(r.supply_status === 'Diterima') return `<span class="badge badge-green">Diterima</span>`;
   if(r.qc_status === 'Lulus') return `<span class="badge badge-green">Lulus QC</span>`;
-  if(r.inspection_date) return `<span class="badge badge-amber">Proses QC</span>`;
+  if(qcFilled(r)) return `<span class="badge badge-amber">Proses QC</span>`;
   return `<span class="badge badge-grey">Menunggu</span>`;
 }
 
-function cardHTML(r){
+function cardHTML(r, mode){
+  let meta = '';
+  if(mode==='gudang'){
+    meta = `<span>Qty: <b>${r.sj_do_qty ?? '-'} ${escapeHtml(r.sj_do_unit||'')}</b></span>
+            <span>Tgl SJ/DO: <b>${r.sj_do_date || '-'}</b></span>
+            <span>Status: <b>${escapeHtml(r.status_material || '-')}</b></span>`;
+  } else if(mode==='qc'){
+    meta = `<span>Good: <b>${r.good_material ?? '-'}</b></span>
+            <span>NG: <b>${r.ng_material ?? '-'}</b></span>
+            <span>Status QC: <b>${escapeHtml(r.qc_status || 'Belum diisi')}</b></span>`;
+  } else if(mode==='suplai'){
+    meta = `<span>Suplai Qty: <b>${r.supply_qty ?? '-'}</b></span>
+            <span>Total: <b>${r.total_material ?? '-'}</b></span>
+            <span>Status: <b>${escapeHtml(r.supply_status || 'Belum diisi')}</b></span>`;
+  } else {
+    meta = `<span>Qty SJ/DO: <b>${r.sj_do_qty ?? '-'} ${escapeHtml(r.sj_do_unit||'')}</b></span>
+            <span>Good: <b>${r.good_material ?? '-'}</b></span>
+            <span>NG: <b>${r.ng_material ?? '-'}</b></span>
+            <span>Total: <b>${r.total_material ?? '-'}</b></span>`;
+  }
+  const clickTarget = mode==='laporan' ? 'gudang' : mode;
   return `
-  <div class="record-card" onclick="openForm('${r.id}')">
+  <div class="record-card" onclick="openForm('${clickTarget}','${r.id}')">
     <div class="top">
       <div>
         <div class="pi-name">${escapeHtml(r.pi_specification || '(Tanpa nama PI)')}</div>
@@ -472,12 +678,7 @@ function cardHTML(r){
       ${statusBadge(r)}
     </div>
     ${pipelineHTML(r)}
-    <div class="meta">
-      <span>Qty SJ/DO: <b>${r.sj_do_qty ?? '-'} ${escapeHtml(r.sj_do_unit||'')}</b></span>
-      <span>Good: <b>${r.good_material ?? '-'}</b></span>
-      <span>NG: <b>${r.ng_material ?? '-'}</b></span>
-      <span>Total: <b>${r.total_material ?? '-'}</b></span>
-    </div>
+    <div class="meta">${meta}</div>
   </div>`;
 }
 
@@ -486,37 +687,62 @@ function escapeHtml(s){
 }
 
 /* ---------- Form ---------- */
-const fieldIds = ['pi_specification','sj_do_no','sj_do_date','sj_do_qty','sj_do_unit','delivery_date_to_qc','status_material',
-'inspection_date','good_material','ng_material','qc_status','delivery_supply_material',
-'supply_date','supply_qty','total_material','supply_status'];
+const fieldsByMode = {
+  gudang: ['pi_specification','sj_do_no','sj_do_date','sj_do_qty','sj_do_unit','delivery_date_to_qc','status_material'],
+  qc: ['inspection_date','good_material','ng_material','qc_status','delivery_supply_material'],
+  suplai: ['supply_date','supply_qty','total_material','supply_status']
+};
+const allFieldIds = [...fieldsByMode.gudang, ...fieldsByMode.qc, ...fieldsByMode.suplai];
 
-function openForm(id){
+function openForm(mode, id){
+  document.getElementById('formMode').value = mode;
   document.getElementById('recordId').value = id || '';
+  document.getElementById('modalHead').style.background = MODE_COLOR[mode];
+  document.getElementById('formEyebrow').textContent = MODE_LABEL[mode];
+
+  document.getElementById('block-gudang').classList.toggle('hidden', mode!=='gudang');
+  document.getElementById('block-qc').classList.toggle('hidden', mode!=='qc');
+  document.getElementById('block-suplai').classList.toggle('hidden', mode!=='suplai');
+
+  const refBlock = document.getElementById('refBlock');
+  if(mode==='gudang'){
+    refBlock.classList.add('hidden');
+  } else {
+    refBlock.classList.remove('hidden');
+  }
+
   if(id){
     const r = records.find(x=>x.id===id);
-    document.getElementById('formTitle').textContent = 'Edit Data Order';
-    document.getElementById('deleteBtn').classList.remove('hidden');
-    fieldIds.forEach(f=> document.getElementById('f_'+f).value = r[f] ?? '');
+    document.getElementById('formTitle').textContent = mode==='gudang' ? 'Edit Data Gudang' : (mode==='qc' ? 'Isi Hasil QC' : 'Isi Data Suplai');
+    document.getElementById('deleteBtn').classList.toggle('hidden', mode!=='gudang');
+    allFieldIds.forEach(f=> document.getElementById('f_'+f).value = r[f] ?? '');
+    if(mode!=='gudang'){
+      refBlock.innerHTML = `Order: <b>${escapeHtml(r.pi_specification||'-')}</b> &nbsp;|&nbsp; No SJ/DO: <b>${escapeHtml(r.sj_do_no||'-')}</b> &nbsp;|&nbsp; Qty: <b>${r.sj_do_qty??'-'} ${escapeHtml(r.sj_do_unit||'')}</b>`;
+    }
   } else {
-    document.getElementById('formTitle').textContent = 'Tambah Data Order';
+    document.getElementById('formTitle').textContent = 'Tambah Order Baru';
     document.getElementById('deleteBtn').classList.add('hidden');
-    fieldIds.forEach(f=> document.getElementById('f_'+f).value = '');
+    allFieldIds.forEach(f=> document.getElementById('f_'+f).value = '');
   }
   document.getElementById('formModal').classList.add('open');
 }
 function closeForm(){ document.getElementById('formModal').classList.remove('open'); }
 
 async function saveRecord(){
+  const mode = document.getElementById('formMode').value;
   const id = document.getElementById('recordId').value;
+  const fieldsToSave = fieldsByMode[mode];
   const payload = {};
-  fieldIds.forEach(f=>{
+  fieldsToSave.forEach(f=>{
     const val = document.getElementById('f_'+f).value;
     payload[f] = val === '' ? null : val;
   });
+
   let error;
   if(id){
     ({error} = await supabaseClient.from(TABLE).update(payload).eq('id', id));
   } else {
+    if(mode!=='gudang'){ showToast('Pilih order yang sudah ada dari daftar terlebih dahulu'); return; }
     ({error} = await supabaseClient.from(TABLE).insert(payload));
   }
   if(error){ showToast('Gagal menyimpan: '+error.message); return; }
@@ -528,7 +754,7 @@ async function saveRecord(){
 async function deleteRecord(){
   const id = document.getElementById('recordId').value;
   if(!id) return;
-  if(!confirm('Hapus data ini secara permanen?')) return;
+  if(!confirm('Hapus data order ini secara permanen? Semua data Gudang, QC, dan Suplai untuk order ini akan hilang.')) return;
   const {error} = await supabaseClient.from(TABLE).delete().eq('id', id);
   if(error){ showToast('Gagal menghapus: '+error.message); return; }
   showToast('Data dihapus');
@@ -536,18 +762,23 @@ async function deleteRecord(){
   loadRecords();
 }
 
-/* ---------- CSV export ---------- */
+/* ---------- CSV export (matches original report layout) ---------- */
 function exportCSV(){
   if(records.length===0){ showToast('Belum ada data untuk diekspor'); return; }
-  const headers = ['pi_specification','sj_do_no','sj_do_date','sj_do_qty','sj_do_unit','delivery_date_to_qc','status_material',
+  const headerGroup1 = ['Wharehouse','','','','','','','Quality Control','','','','','Suplay Material','','',''];
+  const headerGroup2 = ['PI Data','','','','','','','In Coming QC','','','','','','','',''];
+  const headers = ['PI Specification','SJ/DO No','SJ/DO Date','SJ DO Qty','SJ/DO Unit','Delivery Date to QC','Status Material',
+  'Infection Date','Good Material','N.G Material','Status','Delivery Suplay Material',
+  'Suplay Date','Suplay Qty','Total Material','Status'];
+  const keys = ['pi_specification','sj_do_no','sj_do_date','sj_do_qty','sj_do_unit','delivery_date_to_qc','status_material',
   'inspection_date','good_material','ng_material','qc_status','delivery_supply_material',
   'supply_date','supply_qty','total_material','supply_status'];
-  const rows = records.map(r => headers.map(h => `"${(r[h] ?? '').toString().replace(/"/g,'""')}"`).join(','));
-  const csv = [headers.join(','), ...rows].join('\n');
-  const blob = new Blob([csv], {type:'text/csv'});
+  const rows = records.map(r => keys.map(k => `"${(r[k] ?? '').toString().replace(/"/g,'""')}"`).join(','));
+  const csv = [headerGroup1.join(','), headerGroup2.join(','), headers.join(','), ...rows].join('\n');
+  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `material-tracking-${new Date().toISOString().slice(0,10)}.csv`;
+  a.download = `data-order-and-status-${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
 }
 
