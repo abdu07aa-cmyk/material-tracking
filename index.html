@@ -341,17 +341,21 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
         <table class="report" id="reportTable">
           <thead>
             <tr class="grp">
-              <th colspan="7">Wharehouse</th>
+              <th colspan="11">Wharehouse</th>
               <th colspan="5">Quality Control</th>
               <th colspan="4">Suplay Material</th>
             </tr>
             <tr class="subgrp">
-              <th colspan="7">PI Data</th>
+              <th colspan="11">PI Data</th>
               <th colspan="5">In Coming QC</th>
               <th colspan="4"></th>
             </tr>
             <tr class="cols">
-              <th class="col-warehouse">PI Specification</th>
+              <th class="col-warehouse">PI No</th>
+              <th>PI Date</th>
+              <th>PI Qty</th>
+              <th>Brand</th>
+              <th>PI Specification</th>
               <th>SJ/DO No</th>
               <th>SJ/DO Date</th>
               <th>SJ DO Qty</th>
@@ -398,6 +402,12 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
       <!-- GUDANG FIELDS -->
       <div id="block-gudang">
         <div class="section-title"><span class="dot" style="background:var(--steel)"></span>Wharehouse — PI Data</div>
+        <div class="field-grid">
+          <div class="field"><label>PI No</label><input id="f_pi_no"></div>
+          <div class="field"><label>PI Date</label><input type="date" id="f_pi_date"></div>
+          <div class="field"><label>PI Qty</label><input type="number" id="f_pi_qty"></div>
+          <div class="field"><label>Brand</label><input id="f_brand"></div>
+        </div>
         <div class="field"><label>PI Specification</label><input id="f_pi_specification"></div>
         <div class="field-grid">
           <div class="field"><label>SJ/DO No</label><input id="f_sj_do_no"></div>
@@ -606,7 +616,11 @@ function renderLaporan(){
   }
   body.innerHTML = filtered.map(r=>`
     <tr>
-      <td class="col-warehouse">${escapeHtml(r.pi_specification||'')}</td>
+      <td class="col-warehouse">${escapeHtml(r.pi_no||'')}</td>
+      <td>${r.pi_date||''}</td>
+      <td>${r.pi_qty??''}</td>
+      <td>${escapeHtml(r.brand||'')}</td>
+      <td>${escapeHtml(r.pi_specification||'')}</td>
       <td>${escapeHtml(r.sj_do_no||'')}</td>
       <td>${r.sj_do_date||''}</td>
       <td>${r.sj_do_qty??''}</td>
@@ -650,8 +664,9 @@ function statusBadge(r){
 function cardHTML(r, mode){
   let meta = '';
   if(mode==='gudang'){
-    meta = `<span>Qty: <b>${r.sj_do_qty ?? '-'} ${escapeHtml(r.sj_do_unit||'')}</b></span>
-            <span>Tgl SJ/DO: <b>${r.sj_do_date || '-'}</b></span>
+    meta = `<span>PI No: <b>${escapeHtml(r.pi_no || '-')}</b></span>
+            <span>Brand: <b>${escapeHtml(r.brand || '-')}</b></span>
+            <span>Qty: <b>${r.sj_do_qty ?? '-'} ${escapeHtml(r.sj_do_unit||'')}</b></span>
             <span>Status: <b>${escapeHtml(r.status_material || '-')}</b></span>`;
   } else if(mode==='qc'){
     meta = `<span>Good: <b>${r.good_material ?? '-'}</b></span>
@@ -688,7 +703,7 @@ function escapeHtml(s){
 
 /* ---------- Form ---------- */
 const fieldsByMode = {
-  gudang: ['pi_specification','sj_do_no','sj_do_date','sj_do_qty','sj_do_unit','delivery_date_to_qc','status_material'],
+  gudang: ['pi_no','pi_date','pi_qty','brand','pi_specification','sj_do_no','sj_do_date','sj_do_qty','sj_do_unit','delivery_date_to_qc','status_material'],
   qc: ['inspection_date','good_material','ng_material','qc_status','delivery_supply_material'],
   suplai: ['supply_date','supply_qty','total_material','supply_status']
 };
@@ -717,7 +732,7 @@ function openForm(mode, id){
     document.getElementById('deleteBtn').classList.toggle('hidden', mode!=='gudang');
     allFieldIds.forEach(f=> document.getElementById('f_'+f).value = r[f] ?? '');
     if(mode!=='gudang'){
-      refBlock.innerHTML = `Order: <b>${escapeHtml(r.pi_specification||'-')}</b> &nbsp;|&nbsp; No SJ/DO: <b>${escapeHtml(r.sj_do_no||'-')}</b> &nbsp;|&nbsp; Qty: <b>${r.sj_do_qty??'-'} ${escapeHtml(r.sj_do_unit||'')}</b>`;
+      refBlock.innerHTML = `Order: <b>${escapeHtml(r.pi_specification||'-')}</b> &nbsp;|&nbsp; Brand: <b>${escapeHtml(r.brand||'-')}</b> &nbsp;|&nbsp; No SJ/DO: <b>${escapeHtml(r.sj_do_no||'-')}</b> &nbsp;|&nbsp; Qty: <b>${r.sj_do_qty??'-'} ${escapeHtml(r.sj_do_unit||'')}</b>`;
     }
   } else {
     document.getElementById('formTitle').textContent = 'Tambah Order Baru';
@@ -765,12 +780,12 @@ async function deleteRecord(){
 /* ---------- CSV export (matches original report layout) ---------- */
 function exportCSV(){
   if(records.length===0){ showToast('Belum ada data untuk diekspor'); return; }
-  const headerGroup1 = ['Wharehouse','','','','','','','Quality Control','','','','','Suplay Material','','',''];
-  const headerGroup2 = ['PI Data','','','','','','','In Coming QC','','','','','','','',''];
-  const headers = ['PI Specification','SJ/DO No','SJ/DO Date','SJ DO Qty','SJ/DO Unit','Delivery Date to QC','Status Material',
+  const headerGroup1 = ['Wharehouse','','','','','','','','','','','Quality Control','','','','','Suplay Material','','',''];
+  const headerGroup2 = ['PI Data','','','','','','','','','','','In Coming QC','','','','','','','',''];
+  const headers = ['PI No','PI Date','PI Qty','Brand','PI Specification','SJ/DO No','SJ/DO Date','SJ DO Qty','SJ/DO Unit','Delivery Date to QC','Status Material',
   'Infection Date','Good Material','N.G Material','Status','Delivery Suplay Material',
   'Suplay Date','Suplay Qty','Total Material','Status'];
-  const keys = ['pi_specification','sj_do_no','sj_do_date','sj_do_qty','sj_do_unit','delivery_date_to_qc','status_material',
+  const keys = ['pi_no','pi_date','pi_qty','brand','pi_specification','sj_do_no','sj_do_date','sj_do_qty','sj_do_unit','delivery_date_to_qc','status_material',
   'inspection_date','good_material','ng_material','qc_status','delivery_supply_material',
   'supply_date','supply_qty','total_material','supply_status'];
   const rows = records.map(r => keys.map(k => `"${(r[k] ?? '').toString().replace(/"/g,'""')}"`).join(','));
