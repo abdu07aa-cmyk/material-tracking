@@ -128,6 +128,16 @@ select.btn-ghost{font-weight:500;}
 .modal-body{padding:18px;}
 .readonly-block{background:#eef1ee; border:1px dashed var(--line); border-radius:8px; padding:10px 12px; margin-bottom:14px; font-size:12px; color:var(--muted);}
 .readonly-block b{color:var(--ink);}
+.section-title-plain{font-family:'Oswald'; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--steel-dark); margin:0 0 8px; padding-bottom:6px; border-bottom:2px solid var(--line);}
+.hint-text{font-size:11.5px; color:var(--muted); margin:0 0 10px;}
+.item-row{background:var(--paper-2); border:1px solid var(--line); border-radius:8px; padding:12px; margin-bottom:10px; position:relative;}
+.item-row .row-num{position:absolute; top:-9px; left:10px; background:var(--steel); color:#fff; font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px; font-family:'Oswald';}
+.item-row .remove-row{position:absolute; top:8px; right:8px; background:transparent; border:none; color:var(--muted); cursor:pointer; font-size:16px; line-height:1; padding:2px 6px;}
+.item-row .remove-row:hover{color:var(--red);}
+.item-row .row-fields{display:grid; grid-template-columns:2fr 1fr 1fr; gap:8px; margin-top:6px;}
+@media(max-width:420px){.item-row .row-fields{grid-template-columns:1fr;}}
+.item-row label{display:block; font-size:10px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:3px;}
+.item-row input{width:100%; border:1px solid var(--line); border-radius:6px; padding:8px 9px; font-family:'Inter'; font-size:13px; background:#fff;}
 .field-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
 @media(max-width:420px){.field-grid{grid-template-columns:1fr;}}
 .field{margin-bottom:10px;}
@@ -291,19 +301,22 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
 <div class="modal-backdrop" id="itemModal">
   <div class="modal">
     <div class="modal-head" style="background:var(--steel);">
-      <div><div class="eyebrow">Gudang</div><h2 id="itemModalTitle">Tambah Jenis Barang</h2></div>
+      <div><div class="eyebrow">Gudang</div><h2 id="itemModalTitle">Tambah PI Baru</h2></div>
       <button class="icon-btn" onclick="closeItemModal()">✕</button>
     </div>
     <div class="modal-body">
       <input type="hidden" id="i_id">
+      <div class="section-title-plain">Data PI</div>
       <div class="field-grid">
         <div class="field"><label>PI No</label><input id="i_pi_no"></div>
         <div class="field"><label>PI Date</label><input type="date" id="i_pi_date"></div>
-        <div class="field"><label>Brand</label><input id="i_brand"></div>
-        <div class="field"><label>PI Qty (dipesan)</label><input type="number" id="i_pi_qty"></div>
       </div>
-      <div class="field"><label>PI Specification (jenis barang)</label><input id="i_pi_specification" placeholder="Nama / jenis barang"></div>
-      <div class="field"><label>Unit</label><input id="i_unit" placeholder="pcs / kg / roll"></div>
+      <div class="field"><label>Brand</label><input id="i_brand"></div>
+
+      <div class="section-title-plain" id="itemRowsLabel" style="margin-top:18px;">Jenis Barang dalam PI Ini</div>
+      <p id="itemRowsHint" class="hint-text">Satu PI bisa berisi beberapa jenis barang — tambah barisnya satu per satu.</p>
+      <div id="itemRowsContainer"></div>
+      <button class="btn btn-ghost btn-sm" id="addRowBtn" onclick="addItemRow()" type="button">+ Tambah Jenis Barang</button>
     </div>
     <div class="modal-actions">
       <button class="btn btn-danger hidden" id="itemDeleteBtn" onclick="deleteItem()">Hapus</button>
@@ -608,8 +621,55 @@ function itemCardHTML(item, stage, compact){
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 /* ---------- Item modal (master barang) ---------- */
+let itemRowKeys = [];
+let itemRowSeq = 0;
+
+function rowTemplate(key, num, data){
+  data = data || {};
+  return `
+  <div class="item-row" data-row-key="${key}">
+    <div class="row-num">Barang ${num}</div>
+    <button type="button" class="remove-row" onclick="removeItemRow('${key}')" title="Hapus baris">✕</button>
+    <div class="field">
+      <label>PI Specification (jenis barang)</label>
+      <input id="row_${key}_spec" placeholder="Nama / jenis barang" value="${escapeHtml(data.pi_specification||'')}">
+    </div>
+    <div class="row-fields">
+      <div class="field"><label>PI Qty</label><input type="number" id="row_${key}_qty" value="${data.pi_qty??''}"></div>
+      <div class="field"><label>Unit</label><input id="row_${key}_unit" placeholder="pcs/kg" value="${escapeHtml(data.unit||'')}"></div>
+    </div>
+  </div>`;
+}
+
+function renumberRows(){
+  const container = document.getElementById('itemRowsContainer');
+  [...container.children].forEach((el, i)=>{
+    el.querySelector('.row-num').textContent = 'Barang ' + (i+1);
+    el.querySelector('.remove-row').classList.toggle('hidden', itemRowKeys.length<=1);
+  });
+}
+
+function addItemRow(data){
+  const key = 'r' + (itemRowSeq++);
+  itemRowKeys.push(key);
+  const container = document.getElementById('itemRowsContainer');
+  container.insertAdjacentHTML('beforeend', rowTemplate(key, itemRowKeys.length, data));
+  renumberRows();
+}
+
+function removeItemRow(key){
+  if(itemRowKeys.length<=1) return;
+  itemRowKeys = itemRowKeys.filter(k=>k!==key);
+  const el = document.querySelector(`.item-row[data-row-key="${key}"]`);
+  if(el) el.remove();
+  renumberRows();
+}
+
 function openItemModal(id){
   document.getElementById('i_id').value = id || '';
+  document.getElementById('itemRowsContainer').innerHTML = '';
+  itemRowKeys = [];
+
   if(id){
     const it = items.find(x=>x.id===id);
     document.getElementById('itemModalTitle').textContent = 'Edit Jenis Barang';
@@ -617,13 +677,18 @@ function openItemModal(id){
     document.getElementById('i_pi_no').value = it.pi_no || '';
     document.getElementById('i_pi_date').value = it.pi_date || '';
     document.getElementById('i_brand').value = it.brand || '';
-    document.getElementById('i_pi_qty').value = it.pi_qty ?? '';
-    document.getElementById('i_pi_specification').value = it.pi_specification || '';
-    document.getElementById('i_unit').value = it.unit || '';
+    document.getElementById('itemRowsLabel').textContent = 'Jenis Barang';
+    document.getElementById('itemRowsHint').textContent = 'Mengedit satu jenis barang ini saja.';
+    document.getElementById('addRowBtn').classList.add('hidden');
+    addItemRow({pi_specification: it.pi_specification, pi_qty: it.pi_qty, unit: it.unit});
   } else {
-    document.getElementById('itemModalTitle').textContent = 'Tambah Jenis Barang';
+    document.getElementById('itemModalTitle').textContent = 'Tambah PI Baru';
     document.getElementById('itemDeleteBtn').classList.add('hidden');
-    ['i_pi_no','i_pi_date','i_brand','i_pi_qty','i_pi_specification','i_unit'].forEach(f=>document.getElementById(f).value='');
+    ['i_pi_no','i_pi_date','i_brand'].forEach(f=>document.getElementById(f).value='');
+    document.getElementById('itemRowsLabel').textContent = 'Jenis Barang dalam PI Ini';
+    document.getElementById('itemRowsHint').textContent = 'Satu PI bisa berisi beberapa jenis barang — tambah barisnya satu per satu.';
+    document.getElementById('addRowBtn').classList.remove('hidden');
+    addItemRow();
   }
   document.getElementById('itemModal').classList.add('open');
 }
@@ -631,19 +696,38 @@ function closeItemModal(){ document.getElementById('itemModal').classList.remove
 
 async function saveItem(){
   const id = document.getElementById('i_id').value;
-  const payload = {
-    pi_no: document.getElementById('i_pi_no').value || null,
-    pi_date: document.getElementById('i_pi_date').value || null,
-    brand: document.getElementById('i_brand').value || null,
-    pi_qty: document.getElementById('i_pi_qty').value || null,
-    pi_specification: document.getElementById('i_pi_specification').value || null,
-    unit: document.getElementById('i_unit').value || null
-  };
-  let error;
-  if(id){ ({error} = await supabaseClient.from('pi_items').update(payload).eq('id', id)); }
-  else { ({error} = await supabaseClient.from('pi_items').insert(payload)); }
+  const pi_no = document.getElementById('i_pi_no').value || null;
+  const pi_date = document.getElementById('i_pi_date').value || null;
+  const brand = document.getElementById('i_brand').value || null;
+
+  if(id){
+    const key = itemRowKeys[0];
+    const payload = {
+      pi_no, pi_date, brand,
+      pi_specification: document.getElementById('row_'+key+'_spec').value || null,
+      pi_qty: document.getElementById('row_'+key+'_qty').value || null,
+      unit: document.getElementById('row_'+key+'_unit').value || null
+    };
+    const {error} = await supabaseClient.from('pi_items').update(payload).eq('id', id);
+    if(error){ showToast('Gagal menyimpan: '+error.message); return; }
+    showToast('Data barang tersimpan');
+    closeItemModal();
+    loadAll();
+    return;
+  }
+
+  const rows = itemRowKeys.map(key=>({
+    pi_no, pi_date, brand,
+    pi_specification: document.getElementById('row_'+key+'_spec').value || null,
+    pi_qty: document.getElementById('row_'+key+'_qty').value || null,
+    unit: document.getElementById('row_'+key+'_unit').value || null
+  })).filter(r=> r.pi_specification || r.pi_qty);
+
+  if(rows.length===0){ showToast('Isi minimal 1 jenis barang'); return; }
+
+  const {error} = await supabaseClient.from('pi_items').insert(rows);
   if(error){ showToast('Gagal menyimpan: '+error.message); return; }
-  showToast('Data barang tersimpan');
+  showToast(rows.length>1 ? `${rows.length} jenis barang tersimpan` : 'Data barang tersimpan');
   closeItemModal();
   loadAll();
 }
