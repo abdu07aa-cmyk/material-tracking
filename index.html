@@ -360,15 +360,15 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
       <div id="entryRefBlock" class="readonly-block"></div>
 
       <div id="eblock-gudang" class="hidden">
-        <div class="field"><label>Supplier</label><input id="e_supplier" placeholder="Nama supplier pengirim"></div>
+        <div class="field"><label>Supplier</label><input id="e_supplier" list="supplierOptions" placeholder="Pilih dari daftar atau ketik nama baru" autocomplete="off"></div>
         <div class="field-grid">
           <div class="field"><label>SJ/DO No</label><input id="e_sj_do_no"></div>
           <div class="field"><label>SJ/DO Date</label><input type="date" id="e_sj_do_date"></div>
-          <div class="field"><label>SJ DO Qty</label><input type="number" id="e_sj_do_qty"></div>
+          <div class="field"><label>Qty Barang Masuk (SJ DO Qty)</label><input type="number" id="e_sj_do_qty"></div>
           <div class="field"><label>SJ/DO Unit</label><input id="e_sj_do_unit"></div>
           <div class="field"><label>Delivery Date to QC</label><input type="date" id="e_delivery_date_to_qc"></div>
           <div class="field"><label>Status Material</label>
-            <select id="e_status_material"><option value="Menunggu">Menunggu</option><option value="Terkirim">Terkirim ke QC</option><option value="Selesai">Selesai</option></select>
+            <input id="e_status_material" placeholder="tulis status, mis: Terkirim ke QC">
           </div>
         </div>
       </div>
@@ -386,7 +386,7 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
           <div class="field"><label>Good Material</label><input type="number" id="e_good_material"></div>
           <div class="field"><label>N.G Material</label><input type="number" id="e_ng_material"></div>
           <div class="field"><label>Status</label>
-            <select id="e_qc_status"><option value="Proses">Proses</option><option value="Lulus">Lulus</option><option value="Ditolak">Ditolak</option></select>
+            <input id="e_qc_status" placeholder="tulis status, mis: Lulus">
           </div>
           <div class="field" style="grid-column:1/-1;"><label>Delivery Suplay Material</label><input type="date" id="e_delivery_supply_material"></div>
         </div>
@@ -398,7 +398,7 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
           <div class="field"><label>Suplay Qty</label><input type="number" id="e_supply_qty"></div>
           <div class="field"><label>Total Material</label><input type="number" id="e_total_material"></div>
           <div class="field"><label>Status</label>
-            <select id="e_supply_status"><option value="Tertunda">Tertunda</option><option value="Sebagian">Sebagian</option><option value="Diterima">Diterima</option></select>
+            <input id="e_supply_status" placeholder="tulis status, mis: Diterima">
           </div>
         </div>
       </div>
@@ -407,7 +407,7 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
         <div class="field-grid">
           <div class="field"><label>Tanggal Diecut</label><input type="date" id="e_machine_date"></div>
           <div class="field"><label>Status</label>
-            <select id="e_machine_status"><option value="Proses">Proses</option><option value="Selesai">Selesai</option></select>
+            <input id="e_machine_status" placeholder="tulis status, mis: Selesai">
           </div>
           <div class="field"><label>Qty Masuk (dari QC)</label><input type="number" id="e_qty_in"></div>
           <div class="field"><label>Qty Keluar (balik ke QC)</label><input type="number" id="e_qty_out"></div>
@@ -420,7 +420,7 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
           <div class="field"><label>Production Date</label><input type="date" id="e_production_date"></div>
           <div class="field"><label>Production Qty</label><input type="number" id="e_production_qty"></div>
           <div class="field"><label>Status</label>
-            <select id="e_production_status"><option value="Tertunda">Tertunda</option><option value="Sebagian">Sebagian</option><option value="Diterima Produksi">Diterima Produksi</option></select>
+            <input id="e_production_status" placeholder="tulis status, mis: Diterima Produksi">
           </div>
         </div>
         <div class="field"><label>Catatan</label><input id="e_notes" placeholder="Opsional"></div>
@@ -433,6 +433,12 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
     </div>
   </div>
 </div>
+
+<datalist id="supplierOptions">
+  <option value="DWSM">
+  <option value="SAMUDRA">
+  <option value="SCI">
+</datalist>
 
 <div class="toast" id="toast"></div>
 
