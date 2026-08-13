@@ -159,7 +159,7 @@ select.btn-ghost{font-weight:500;}
 
 /* Report table */
 .report-scroll{overflow-x:auto; border:1px solid var(--line); border-radius:var(--radius); background:var(--paper-2); box-shadow:var(--shadow);}
-table.report{border-collapse:collapse; width:100%; min-width:1750px; font-size:12px;}
+table.report{border-collapse:collapse; width:100%; min-width:2150px; font-size:12px;}
 table.report th, table.report td{border:1px solid var(--line); padding:7px 9px; text-align:left; white-space:nowrap;}
 table.report thead tr.grp th{background:var(--ink); color:#fff; text-align:center; font-family:'Oswald'; letter-spacing:.05em; font-size:11px; text-transform:uppercase;}
 table.report thead tr.cols th{background:#eef1ee; color:var(--ink); font-size:10.5px; text-transform:uppercase; letter-spacing:.02em; position:sticky; top:0;}
@@ -168,6 +168,7 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
 .col-warehouse{border-left:3px solid var(--steel) !important;}
 .col-qc{border-left:3px solid var(--amber) !important;}
 .col-diecut{border-left:3px solid #9c5b3c !important;}
+.col-qc2{border-left:3px solid #b8860b !important;}
 .col-supply{border-left:3px solid var(--green) !important;}
 .col-prod{border-left:3px solid var(--purple) !important;}
 </style>
@@ -290,16 +291,18 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
         <table class="report">
           <thead>
             <tr class="grp">
-              <th colspan="7">Wharehouse — PI Data</th>
-              <th colspan="5">Quality Control</th>
+              <th colspan="11">Wharehouse — PI Data</th>
+              <th colspan="4">QC Awal</th>
               <th colspan="4">Diecut — Divisi Machine</th>
+              <th colspan="4">QC Ulang (Setelah Diecut)</th>
               <th colspan="3">Suplay Material</th>
               <th colspan="3">Produksi</th>
             </tr>
             <tr class="cols">
-              <th class="col-warehouse">PI No</th><th>PI Date</th><th>Brand</th><th>PI Specification</th><th>Bentuk</th><th>PI Qty</th><th>Tgl Diterima Gudang</th>
-              <th class="col-qc">Diterima (Total)</th><th>Tgl QC</th><th>Good (Total)</th><th>N.G (Total)</th><th>Status QC Terakhir</th>
-              <th class="col-diecut">Tgl Diecut</th><th>Qty Masuk Diecut</th><th>Qty Keluar Diecut</th><th>Status Diecut Terakhir</th>
+              <th class="col-warehouse">PI No</th><th>PI Date</th><th>Brand</th><th>PI Specification</th><th>PI Qty</th><th>Unit</th><th>Tgl Diterima Gudang</th><th>Qty In (Total)</th><th>Supplier</th><th>Bentuk</th><th>Status</th>
+              <th class="col-qc">Tgl QC Awal</th><th>Good Awal (Total)</th><th>N.G Awal (Total)</th><th>Status QC Awal</th>
+              <th class="col-diecut">Tgl Diecut</th><th>Qty Masuk Diecut</th><th>Qty Keluar Diecut</th><th>Status Diecut</th>
+              <th class="col-qc2">Tgl QC Ulang</th><th>Good Ulang (Total)</th><th>N.G Ulang (Total)</th><th>Status QC Ulang</th>
               <th class="col-supply">Tgl Masuk Suplai</th><th>Diterima Suplai (Total)</th><th>Status Suplai Terakhir</th>
               <th class="col-prod">Tgl Masuk Produksi</th><th>Terkirim Produksi (Total)</th><th>Status Produksi Terakhir</th>
             </tr>
@@ -357,6 +360,7 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
       <div id="entryRefBlock" class="readonly-block"></div>
 
       <div id="eblock-gudang" class="hidden">
+        <div class="field"><label>Supplier</label><input id="e_supplier" placeholder="Nama supplier pengirim"></div>
         <div class="field-grid">
           <div class="field"><label>SJ/DO No</label><input id="e_sj_do_no"></div>
           <div class="field"><label>SJ/DO Date</label><input type="date" id="e_sj_do_date"></div>
@@ -370,6 +374,13 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
       </div>
 
       <div id="eblock-qc" class="hidden">
+        <div class="field">
+          <label>Asal Barang</label>
+          <select id="e_source_stage">
+            <option value="Gudang">Dari Gudang (QC Awal)</option>
+            <option value="Diecut">Dari Diecut (QC Ulang, sudah jadi Pcs)</option>
+          </select>
+        </div>
         <div class="field-grid">
           <div class="field"><label>Infection Date</label><input type="date" id="e_inspection_date"></div>
           <div class="field"><label>Good Material</label><input type="number" id="e_good_material"></div>
@@ -437,8 +448,8 @@ const STAGE = {
   produksi: { table:'production_entries', arr:()=>productionEntries,  qtyField:'production_qty',   color:'#6a4c93', label:'Produksi', dateField:'production_date' }
 };
 const FIELDS_BY_STAGE = {
-  gudang:   ['sj_do_no','sj_do_date','sj_do_qty','sj_do_unit','delivery_date_to_qc','status_material'],
-  qc:       ['inspection_date','good_material','ng_material','qc_status','delivery_supply_material'],
+  gudang:   ['supplier','sj_do_no','sj_do_date','sj_do_qty','sj_do_unit','delivery_date_to_qc','status_material'],
+  qc:       ['source_stage','inspection_date','good_material','ng_material','qc_status','delivery_supply_material'],
   diecut:   ['machine_date','qty_in','qty_out','machine_status','notes'],
   suplai:   ['supply_date','supply_qty','total_material','supply_status'],
   produksi: ['production_date','production_qty','production_status','notes']
@@ -515,37 +526,58 @@ function lastVal(arr, field){ return arr.length ? (arr[arr.length-1][field] ?? n
 function itemStats(item){
   const isSheet = item.bentuk === 'Sheet';
   const rec = childrenOf(receipts, item.id);
-  const qc = childrenOf(qcEntries, item.id);
+  const qcAll = childrenOf(qcEntries, item.id);
   const mac = childrenOf(machineEntries, item.id);
   const sup = childrenOf(supplyEntries, item.id);
   const prod = childrenOf(productionEntries, item.id);
 
+  // QC Awal = pemeriksaan barang yang baru datang dari Gudang.
+  // QC Ulang = pemeriksaan barang yang baru selesai dipotong di Diecut (khusus Sheet).
+  const qcGudang = qcAll.filter(e => (e.source_stage||'Gudang') !== 'Diecut');
+  const qcDiecut = qcAll.filter(e => e.source_stage === 'Diecut');
+
   const receivedQty = sumQty(rec,'sj_do_qty');
-  const goodQty = sumQty(qc,'good_material');
-  const ngQty = sumQty(qc,'ng_material');
-  const qcQty = goodQty + ngQty;
+  const goodQtyGudang = sumQty(qcGudang,'good_material');
+  const ngQtyGudang = sumQty(qcGudang,'ng_material');
+  const qcGudangQty = goodQtyGudang + ngQtyGudang;
+  const goodQtyDiecut = sumQty(qcDiecut,'good_material');
+  const ngQtyDiecut = sumQty(qcDiecut,'ng_material');
+  const qcDiecutQty = goodQtyDiecut + ngQtyDiecut;
   const diecutInQty = sumQty(mac,'qty_in');
   const diecutOutQty = sumQty(mac,'qty_out');
   const suppliedQty = sumQty(sup,'supply_qty');
   const producedQty = sumQty(prod,'production_qty');
 
-  // Barang Sheet harus lewat Diecut dulu sebelum ke Suplai; barang Pcs langsung dari QC ke Suplai.
-  const supplyBase = isSheet ? diecutOutQty : goodQty;
+  // Pcs: Gudang → QC Awal → langsung Suplai (pakai hasil QC Awal).
+  // Sheet: Gudang → QC Awal → Diecut → QC Ulang → Suplai (pakai hasil QC Ulang).
+  const supplyBase = isSheet ? goodQtyDiecut : goodQtyGudang;
+
+  const remainToQcGudang = Math.max(0, receivedQty - qcGudangQty);
+  const remainToQcDiecut = isSheet ? Math.max(0, diecutOutQty - qcDiecutQty) : 0;
 
   return {
-    isSheet, rec, qc, mac, sup, prod,
-    receivedQty, goodQty, ngQty, qcQty, diecutInQty, diecutOutQty, suppliedQty, producedQty, supplyBase,
-    remainToQc: Math.max(0, receivedQty - qcQty),
-    remainToDiecut: Math.max(0, goodQty - diecutInQty),
+    isSheet, rec, qcAll, qcGudang, qcDiecut, mac, sup, prod,
+    receivedQty,
+    goodQtyGudang, ngQtyGudang, qcGudangQty,
+    goodQtyDiecut, ngQtyDiecut, qcDiecutQty,
+    goodQty: goodQtyGudang + goodQtyDiecut, ngQty: ngQtyGudang + ngQtyDiecut,
+    diecutInQty, diecutOutQty, suppliedQty, producedQty, supplyBase,
+    remainToQcGudang, remainToQcDiecut,
+    remainToQc: remainToQcGudang + remainToQcDiecut,
+    remainToDiecut: Math.max(0, goodQtyGudang - diecutInQty),
     remainToSupply: Math.max(0, supplyBase - suppliedQty),
     remainToProduction: Math.max(0, suppliedQty - producedQty),
     lastMaterialStatus: lastVal(rec,'status_material'),
-    lastQcStatus: lastVal(qc,'qc_status'),
+    lastSupplier: lastVal(rec,'supplier'),
+    lastQcGudangStatus: lastVal(qcGudang,'qc_status'),
+    lastQcDiecutStatus: lastVal(qcDiecut,'qc_status'),
+    lastQcStatus: lastVal(qcAll,'qc_status'),
     lastMachineStatus: lastVal(mac,'machine_status'),
     lastSupplyStatus: lastVal(sup,'supply_status'),
     lastProdStatus: lastVal(prod,'production_status'),
     lastReceiptDate: lastVal(rec,'sj_do_date'),
-    lastQcDate: lastVal(qc,'inspection_date'),
+    lastQcGudangDate: lastVal(qcGudang,'inspection_date'),
+    lastQcDiecutDate: lastVal(qcDiecut,'inspection_date'),
     lastDiecutDate: lastVal(mac,'machine_date'),
     lastSupplyDate: lastVal(sup,'supply_date'),
     lastProductionDate: lastVal(prod,'production_date')
@@ -605,28 +637,30 @@ function renderStage(stage){
 
 /* ---------- Card rendering ---------- */
 function pipelineHTML(s){
-  // Barang Sheet: Gudang → QC → Diecut → Suplai → Produksi (5 tahap)
-  // Barang Pcs:   Gudang → QC → Suplai → Produksi (4 tahap, lompat Diecut)
+  // Barang Sheet: Gudang → QC Awal → Diecut → QC Ulang → Suplai → Produksi (6 tahap)
+  // Barang Pcs:   Gudang → QC → Suplai → Produksi (4 tahap, lompat Diecut & QC Ulang)
   if(s.isSheet){
     let idx = 0.5;
     if(s.receivedQty>0) idx = 1.5;
-    if(s.qcQty>0) idx = 2.5;
+    if(s.qcGudangQty>0) idx = 2.5;
     if(s.diecutOutQty>0) idx = 3.5;
-    if(s.suppliedQty>0) idx = 4.5;
-    if(s.producedQty>0) idx = 5.4;
+    if(s.qcDiecutQty>0) idx = 4.5;
+    if(s.suppliedQty>0) idx = 5.5;
+    if(s.producedQty>0) idx = 6.4;
     return `
     <div class="pipeline">
       <div class="seg ${idx>=1?'done':'current'}"></div>
       <div class="seg ${idx>=2?'done':(idx>=1?'current':'')}"></div>
       <div class="seg ${idx>=3?'done':(idx>=2?'current':'')}"></div>
       <div class="seg ${idx>=4?'done':(idx>=3?'current':'')}"></div>
-      <div class="seg ${idx>=5?'current':(idx>=4?'current':'')}"></div>
+      <div class="seg ${idx>=5?'done':(idx>=4?'current':'')}"></div>
+      <div class="seg ${idx>=6?'current':(idx>=5?'current':'')}"></div>
     </div>
-    <div class="pipeline-labels"><span>Gudang</span><span>QC</span><span>Diecut</span><span>Suplai</span><span>Produksi</span></div>`;
+    <div class="pipeline-labels"><span>Gudang</span><span>QC Awal</span><span>Diecut</span><span>QC Ulang</span><span>Suplai</span><span>Produksi</span></div>`;
   }
   let idx = 0.5;
   if(s.receivedQty>0) idx = 1.5;
-  if(s.qcQty>0) idx = 2.5;
+  if(s.qcGudangQty>0) idx = 2.5;
   if(s.suppliedQty>0) idx = 3.5;
   if(s.producedQty>0) idx = 4.4;
   return `
@@ -642,8 +676,8 @@ function pipelineHTML(s){
 function overallBadge(s){
   // Status di sini murni menampilkan input status manual terakhir, bukan tebakan otomatis.
   const stagesInOrder = s.isSheet
-    ? [['Produksi', s.lastProdStatus], ['Suplai', s.lastSupplyStatus], ['Diecut', s.lastMachineStatus], ['QC', s.lastQcStatus], ['Gudang', s.lastMaterialStatus]]
-    : [['Produksi', s.lastProdStatus], ['Suplai', s.lastSupplyStatus], ['QC', s.lastQcStatus], ['Gudang', s.lastMaterialStatus]];
+    ? [['Produksi', s.lastProdStatus], ['Suplai', s.lastSupplyStatus], ['QC Ulang', s.lastQcDiecutStatus], ['Diecut', s.lastMachineStatus], ['QC Awal', s.lastQcGudangStatus], ['Gudang', s.lastMaterialStatus]]
+    : [['Produksi', s.lastProdStatus], ['Suplai', s.lastSupplyStatus], ['QC', s.lastQcGudangStatus], ['Gudang', s.lastMaterialStatus]];
   for(const [label, val] of stagesInOrder){
     if(val) return `<span class="badge badge-grey">${escapeHtml(label)}: ${escapeHtml(val)}</span>`;
   }
@@ -662,8 +696,9 @@ function historyHTML(entries, stage){
   const cfg = STAGE[stage];
   return entries.slice().reverse().slice(0,4).map(e=>{
     let qty;
-    if(stage==='qc') qty = `${e.good_material??0} good / ${e.ng_material??0} ng`;
+    if(stage==='qc') qty = `[${e.source_stage==='Diecut'?'QC Ulang':'QC Awal'}] ${e.good_material??0} good / ${e.ng_material??0} ng`;
     else if(stage==='diecut') qty = `masuk ${e.qty_in??0} / keluar ${e.qty_out??0}`;
+    else if(stage==='gudang') qty = `${e.sj_do_qty??'-'} ${escapeHtml(e.sj_do_unit||'')}${e.supplier ? ' · '+escapeHtml(e.supplier) : ''}`;
     else qty = cfg.qtyField ? (e[cfg.qtyField] ?? '-') : '-';
     const date = e[cfg.dateField] || '-';
     return `<div class="history-row" onclick="event.stopPropagation();openEntryModal('${stage}','${e.pi_item_id}','${e.id}')"><span class="l">${date}</span><span>${qty}</span></div>`;
@@ -674,8 +709,9 @@ function itemCardHTML(item, stage, compact){
   const s = itemStats(item);
   let bar = '';
   if(stage==='gudang') bar = qtyBarHTML('Diterima dari Supplier', s.receivedQty, item.pi_qty, 'var(--steel)');
-  else if(stage==='qc') bar = qtyBarHTML('Sudah Diperiksa (Good+NG)', s.qcQty, s.receivedQty, 'var(--amber)');
-  else if(stage==='diecut') bar = qtyBarHTML('Selesai Diecut (Keluar)', s.diecutOutQty, s.goodQty, '#9c5b3c');
+  else if(stage==='qc' && s.isSheet) bar = qtyBarHTML('QC Awal: '+s.qcGudangQty+'/'+s.receivedQty+' · QC Ulang', s.qcDiecutQty, s.diecutOutQty, 'var(--amber)');
+  else if(stage==='qc') bar = qtyBarHTML('Sudah Diperiksa (Good+NG)', s.qcGudangQty, s.receivedQty, 'var(--amber)');
+  else if(stage==='diecut') bar = qtyBarHTML('Selesai Diecut (Keluar)', s.diecutOutQty, s.goodQtyGudang, '#9c5b3c');
   else if(stage==='suplai') bar = qtyBarHTML('Diterima Suplai', s.suppliedQty, s.supplyBase, 'var(--green)');
   else if(stage==='produksi') bar = qtyBarHTML('Terkirim ke Produksi', s.producedQty, s.suppliedQty, 'var(--purple)');
 
@@ -848,12 +884,17 @@ function openEntryModal(stage, itemId, entryId){
 
   const s = itemStats(item);
   document.getElementById('entryRefBlock').innerHTML =
-    `Barang: <b>${escapeHtml(item.pi_specification||'-')}</b> &nbsp;|&nbsp; PI No: <b>${escapeHtml(item.pi_no||'-')}</b> &nbsp;|&nbsp; Bentuk: <b>${escapeHtml(item.bentuk||'Pcs')}</b><br>Diterima: <b>${s.receivedQty}</b> · Good: <b>${s.goodQty}</b> · NG: <b>${s.ngQty}</b>${s.isSheet?` · Diecut Keluar: <b>${s.diecutOutQty}</b>`:''} · Ke Suplai: <b>${s.suppliedQty}</b> · Ke Produksi: <b>${s.producedQty}</b>`;
+    `Barang: <b>${escapeHtml(item.pi_specification||'-')}</b> &nbsp;|&nbsp; PI No: <b>${escapeHtml(item.pi_no||'-')}</b> &nbsp;|&nbsp; Bentuk: <b>${escapeHtml(item.bentuk||'Pcs')}</b><br>
+    Diterima Gudang: <b>${s.receivedQty}</b> · QC Awal (good/ng): <b>${s.goodQtyGudang}/${s.ngQtyGudang}</b>${s.isSheet?` · Diecut (masuk/keluar): <b>${s.diecutInQty}/${s.diecutOutQty}</b> · QC Ulang (good/ng): <b>${s.goodQtyDiecut}/${s.ngQtyDiecut}</b>`:''} · Ke Suplai: <b>${s.suppliedQty}</b> · Ke Produksi: <b>${s.producedQty}</b>`;
 
   FIELDS_BY_STAGE[stage].forEach(f=>{
     const el = document.getElementById(entryFieldElId(stage, f));
     if(el) el.value = '';
   });
+  if(stage==='qc' && !entryId){
+    // Default cerdas: kalau QC Awal belum tuntas, arahkan ke situ; kalau sudah, dan barang Sheet, arahkan ke QC Ulang. Tetap bisa diganti manual.
+    document.getElementById('e_source_stage').value = (s.remainToQcGudang<=0 && s.isSheet) ? 'Diecut' : 'Gudang';
+  }
   document.getElementById('entryDeleteBtn').classList.add('hidden');
   document.getElementById('entryModalTitle').textContent = 'Catat ' + cfg.label;
 
@@ -908,7 +949,7 @@ function renderLaporan(){
   const filtered = items.filter(it => !q || (it.pi_specification||'').toLowerCase().includes(q) || (it.pi_no||'').toLowerCase().includes(q));
   const body = document.getElementById('reportBody');
   if(!body) return;
-  if(filtered.length===0){ body.innerHTML = `<tr><td colspan="22" style="text-align:center;color:var(--muted);font-family:'Inter';padding:30px;">Belum ada data</td></tr>`; return; }
+  if(filtered.length===0){ body.innerHTML = `<tr><td colspan="29" style="text-align:center;color:var(--muted);font-family:'Inter';padding:30px;">Belum ada data</td></tr>`; return; }
   body.innerHTML = filtered.map(it=>{
     const s = itemStats(it);
     return `<tr>
@@ -916,18 +957,25 @@ function renderLaporan(){
       <td>${it.pi_date||''}</td>
       <td>${escapeHtml(it.brand||'')}</td>
       <td>${escapeHtml(it.pi_specification||'')}</td>
-      <td>${escapeHtml(it.bentuk||'Pcs')}</td>
-      <td>${it.pi_qty??''} ${escapeHtml(it.unit||'')}</td>
+      <td>${it.pi_qty??''}</td>
+      <td>${escapeHtml(it.unit||'')}</td>
       <td>${s.lastReceiptDate||'-'}</td>
-      <td class="col-qc">${s.receivedQty}</td>
-      <td>${s.lastQcDate||'-'}</td>
-      <td>${s.goodQty}</td>
-      <td>${s.ngQty}</td>
-      <td>${escapeHtml(s.lastQcStatus||'-')}</td>
+      <td>${s.receivedQty}</td>
+      <td>${escapeHtml(s.lastSupplier||'-')}</td>
+      <td>${escapeHtml(it.bentuk||'Pcs')}</td>
+      <td>${escapeHtml(s.lastMaterialStatus||'-')}</td>
+      <td class="col-qc">${s.lastQcGudangDate||'-'}</td>
+      <td>${s.goodQtyGudang}</td>
+      <td>${s.ngQtyGudang}</td>
+      <td>${escapeHtml(s.lastQcGudangStatus||'-')}</td>
       <td class="col-diecut">${s.isSheet ? (s.lastDiecutDate||'-') : '-'}</td>
       <td>${s.isSheet ? s.diecutInQty : '-'}</td>
       <td>${s.isSheet ? s.diecutOutQty : '-'}</td>
       <td>${s.isSheet ? escapeHtml(s.lastMachineStatus||'-') : '-'}</td>
+      <td class="col-qc2">${s.isSheet ? (s.lastQcDiecutDate||'-') : '-'}</td>
+      <td>${s.isSheet ? s.goodQtyDiecut : '-'}</td>
+      <td>${s.isSheet ? s.ngQtyDiecut : '-'}</td>
+      <td>${s.isSheet ? escapeHtml(s.lastQcDiecutStatus||'-') : '-'}</td>
       <td class="col-supply">${s.lastSupplyDate||'-'}</td>
       <td>${s.suppliedQty}</td>
       <td>${escapeHtml(s.lastSupplyStatus||'-')}</td>
@@ -941,16 +989,18 @@ function renderLaporan(){
 /* ---------- CSV export ---------- */
 function exportCSV(){
   if(items.length===0){ showToast('Belum ada data untuk diekspor'); return; }
-  const headers = ['PI No','PI Date','Brand','PI Specification','Bentuk','PI Qty','Unit','Tgl Diterima Gudang','Diterima (Total)',
-  'Tgl QC','Good (Total)','N.G (Total)','Status QC Terakhir',
-  'Tgl Diecut','Qty Masuk Diecut','Qty Keluar Diecut','Status Diecut Terakhir',
+  const headers = ['PI No','PI Date','Brand','PI Specification','PI Qty','Unit','Tgl Diterima Gudang','Qty In (Total)','Supplier','Bentuk','Status',
+  'Tgl QC Awal','Good Awal (Total)','N.G Awal (Total)','Status QC Awal',
+  'Tgl Diecut','Qty Masuk Diecut','Qty Keluar Diecut','Status Diecut',
+  'Tgl QC Ulang','Good Ulang (Total)','N.G Ulang (Total)','Status QC Ulang',
   'Tgl Masuk Suplai','Diterima Suplai (Total)','Status Suplai Terakhir',
   'Tgl Masuk Produksi','Terkirim Produksi (Total)','Status Produksi Terakhir'];
   const rows = items.map(it=>{
     const s = itemStats(it);
-    const vals = [it.pi_no, it.pi_date, it.brand, it.pi_specification, it.bentuk||'Pcs', it.pi_qty, it.unit, s.lastReceiptDate, s.receivedQty,
-      s.lastQcDate, s.goodQty, s.ngQty, s.lastQcStatus,
+    const vals = [it.pi_no, it.pi_date, it.brand, it.pi_specification, it.pi_qty, it.unit, s.lastReceiptDate, s.receivedQty, s.lastSupplier, it.bentuk||'Pcs', s.lastMaterialStatus,
+      s.lastQcGudangDate, s.goodQtyGudang, s.ngQtyGudang, s.lastQcGudangStatus,
       s.isSheet ? s.lastDiecutDate : '', s.isSheet ? s.diecutInQty : '', s.isSheet ? s.diecutOutQty : '', s.isSheet ? s.lastMachineStatus : '',
+      s.isSheet ? s.lastQcDiecutDate : '', s.isSheet ? s.goodQtyDiecut : '', s.isSheet ? s.ngQtyDiecut : '', s.isSheet ? s.lastQcDiecutStatus : '',
       s.lastSupplyDate, s.suppliedQty, s.lastSupplyStatus,
       s.lastProductionDate, s.producedQty, s.lastProdStatus];
     return vals.map(v=>`"${(v ?? '').toString().replace(/"/g,'""')}"`).join(',');
