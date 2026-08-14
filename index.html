@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 :root{
   --ink:#1c222b;
@@ -194,7 +195,7 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
   <div class="appbar">
     <div><h1>Material Tracking</h1><div class="sub">DATA ORDER AND STATUS</div></div>
     <div style="display:flex;gap:8px;">
-      <button class="icon-btn" title="Ekspor CSV" onclick="exportCSV()">⭳</button>
+      <button class="icon-btn" title="Ekspor Excel" onclick="exportExcel()">⭳</button>
       <button class="icon-btn" title="Pengaturan Supabase" onclick="openSettings()">⚙</button>
     </div>
   </div>
@@ -287,7 +288,7 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
       <div class="tab-header"><h2>Laporan — Data Order and Status</h2><p>Ringkasan per jenis barang (total dari semua transaksi bertahap di tiap tahap).</p></div>
       <div class="toolbar">
         <div class="search">🔍<input id="searchLaporan" placeholder="Cari PI Spec / PI No..." oninput="renderLaporan()"></div>
-        <button class="btn btn-ghost" onclick="exportCSV()">⭳ Ekspor CSV</button>
+        <button class="btn btn-ghost" onclick="exportExcel()">⭳ Ekspor Excel</button>
       </div>
       <div class="report-scroll">
         <table class="report">
@@ -367,7 +368,13 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
           <div class="field"><label>SJ/DO No</label><input id="e_sj_do_no"></div>
           <div class="field"><label>SJ/DO Date</label><input type="date" id="e_sj_do_date"></div>
           <div class="field"><label>Qty Barang Masuk (SJ DO Qty)</label><input type="number" id="e_sj_do_qty"></div>
-          <div class="field"><label>SJ/DO Unit</label><input id="e_sj_do_unit"></div>
+          <div class="field"><label>SJ/DO Unit (Bentuk Barang)</label>
+            <select id="e_sj_do_unit">
+              <option value="Pcs">Pcs</option>
+              <option value="Sheet">Sheet (perlu Diecut)</option>
+              <option value="Pack">Pack</option>
+            </select>
+          </div>
           <div class="field"><label>Delivery Date to QC</label><input type="date" id="e_delivery_date_to_qc"></div>
           <div class="field"><label>Status Material</label>
             <input id="e_status_material" placeholder="tulis status, mis: Terkirim ke QC">
@@ -914,6 +921,9 @@ function openEntryModal(stage, itemId, entryId){
   if(stage==='qc' && !entryId){
     // Default cerdas (bisa diganti manual): kalau ada Qty Diecut yang sudah keluar tapi belum di-QC-ulang, arahkan ke QC Ulang.
     document.getElementById('e_source_stage').value = (s.remainToQcDiecut>0) ? 'Diecut' : 'Gudang';
+    // Bentuk yang diperiksa default mengikuti SJ/DO Unit dari penerimaan gudang terakhir.
+    const lastReceiptUnit = s.rec.length ? s.rec[s.rec.length-1].sj_do_unit : null;
+    document.getElementById('e_bentuk_diperiksa').value = (lastReceiptUnit==='Sheet') ? 'Sheet' : 'Pcs';
   }
   if(stage==='qc') toggleQcBentukField();
   document.getElementById('entryDeleteBtn').classList.add('hidden');
@@ -1012,31 +1022,93 @@ function renderLaporan(){
   }).join('');
 }
 
-/* ---------- CSV export ---------- */
-function exportCSV(){
+/* ---------- Excel export (.xlsx rapi, header berkelompok) ---------- */
+const REPORT_COLUMNS = [
+  {h:'PI No', w:16},
+  {h:'PI Date', w:12},
+  {h:'Brand', w:14},
+  {h:'PI Specification', w:20},
+  {h:'PI Qty', w:9},
+  {h:'Unit', w:8},
+  {h:'Tgl Diterima Gudang', w:14},
+  {h:'Qty In (Total)', w:12},
+  {h:'Supplier', w:12},
+  {h:'Status', w:16},
+  {h:'Tgl QC Awal', w:12},
+  {h:'Good — Sheet (perlu Diecut)', w:15},
+  {h:'Good — Pcs (langsung Suplai)', w:15},
+  {h:'N.G Awal (Total)', w:12},
+  {h:'Status QC Awal', w:16},
+  {h:'Tgl Diecut', w:12},
+  {h:'Qty Masuk Diecut', w:13},
+  {h:'Qty Keluar Diecut', w:13},
+  {h:'Status Diecut', w:16},
+  {h:'Tgl QC Ulang', w:12},
+  {h:'Good Ulang (Total)', w:12},
+  {h:'N.G Ulang (Total)', w:12},
+  {h:'Status QC Ulang', w:16},
+  {h:'Tgl Masuk Suplai', w:13},
+  {h:'Diterima Suplai (Total)', w:14},
+  {h:'Status Suplai Terakhir', w:16},
+  {h:'Tgl Masuk Produksi', w:13},
+  {h:'Terkirim Produksi (Total)', w:14},
+  {h:'Status Produksi Terakhir', w:16}
+];
+const REPORT_GROUPS = [
+  {label:'Wharehouse — PI Data', span:10},
+  {label:'QC Awal', span:5},
+  {label:'Diecut — Divisi Machine', span:4},
+  {label:'QC Ulang (Setelah Diecut)', span:4},
+  {label:'Suplay Material', span:3},
+  {label:'Produksi', span:3}
+];
+
+function reportRowValues(it){
+  const s = itemStats(it);
+  return [it.pi_no, it.pi_date, it.brand, it.pi_specification, it.pi_qty, it.unit, s.lastReceiptDate, s.receivedQty, s.lastSupplier, s.lastMaterialStatus,
+    s.lastQcGudangDate, s.goodQtyGudangSheet, s.goodQtyGudangPcs, s.ngQtyGudang, s.lastQcGudangStatus,
+    s.hasSheetActivity ? s.lastDiecutDate : '', s.hasSheetActivity ? s.diecutInQty : '', s.hasSheetActivity ? s.diecutOutQty : '', s.hasSheetActivity ? s.lastMachineStatus : '',
+    s.hasSheetActivity ? s.lastQcDiecutDate : '', s.hasSheetActivity ? s.goodQtyDiecut : '', s.hasSheetActivity ? s.ngQtyDiecut : '', s.hasSheetActivity ? s.lastQcDiecutStatus : '',
+    s.lastSupplyDate, s.suppliedQty, s.lastSupplyStatus,
+    s.lastProductionDate, s.producedQty, s.lastProdStatus
+  ].map(v => v ?? '');
+}
+
+function colLetter(i){
+  let s = '';
+  i++;
+  while(i>0){ const m=(i-1)%26; s=String.fromCharCode(65+m)+s; i=Math.floor((i-1)/26); }
+  return s;
+}
+
+function exportExcel(){
   if(items.length===0){ showToast('Belum ada data untuk diekspor'); return; }
-  const headers = ['PI No','PI Date','Brand','PI Specification','PI Qty','Unit','Tgl Diterima Gudang','Qty In (Total)','Supplier','Status',
-  'Tgl QC Awal','Good — Sheet (perlu Diecut)','Good — Pcs (langsung Suplai)','N.G Awal (Total)','Status QC Awal',
-  'Tgl Diecut','Qty Masuk Diecut','Qty Keluar Diecut','Status Diecut',
-  'Tgl QC Ulang','Good Ulang (Total)','N.G Ulang (Total)','Status QC Ulang',
-  'Tgl Masuk Suplai','Diterima Suplai (Total)','Status Suplai Terakhir',
-  'Tgl Masuk Produksi','Terkirim Produksi (Total)','Status Produksi Terakhir'];
-  const rows = items.map(it=>{
-    const s = itemStats(it);
-    const vals = [it.pi_no, it.pi_date, it.brand, it.pi_specification, it.pi_qty, it.unit, s.lastReceiptDate, s.receivedQty, s.lastSupplier, s.lastMaterialStatus,
-      s.lastQcGudangDate, s.goodQtyGudangSheet, s.goodQtyGudangPcs, s.ngQtyGudang, s.lastQcGudangStatus,
-      s.hasSheetActivity ? s.lastDiecutDate : '', s.hasSheetActivity ? s.diecutInQty : '', s.hasSheetActivity ? s.diecutOutQty : '', s.hasSheetActivity ? s.lastMachineStatus : '',
-      s.hasSheetActivity ? s.lastQcDiecutDate : '', s.hasSheetActivity ? s.goodQtyDiecut : '', s.hasSheetActivity ? s.ngQtyDiecut : '', s.hasSheetActivity ? s.lastQcDiecutStatus : '',
-      s.lastSupplyDate, s.suppliedQty, s.lastSupplyStatus,
-      s.lastProductionDate, s.producedQty, s.lastProdStatus];
-    return vals.map(v=>`"${(v ?? '').toString().replace(/"/g,'""')}"`).join(',');
+  if(typeof XLSX === 'undefined'){ showToast('Modul Excel gagal dimuat, cek koneksi internet'); return; }
+
+  const groupRow = [];
+  REPORT_GROUPS.forEach(g=>{ groupRow.push(g.label); for(let i=1;i<g.span;i++) groupRow.push(''); });
+  const headerRow = REPORT_COLUMNS.map(c=>c.h);
+  const dataRows = items.map(reportRowValues);
+
+  const ws = XLSX.utils.aoa_to_sheet([groupRow, headerRow, ...dataRows]);
+
+  // Merge tiap grup header di baris pertama
+  let col = 0;
+  ws['!merges'] = REPORT_GROUPS.map(g=>{
+    const m = { s:{r:0,c:col}, e:{r:0,c:col+g.span-1} };
+    col += g.span;
+    return m;
   });
-  const csv = [headers.join(','), ...rows].join('\n');
-  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `data-order-and-status-${new Date().toISOString().slice(0,10)}.csv`;
-  a.click();
+
+  ws['!cols'] = REPORT_COLUMNS.map(c=>({wch:c.w}));
+  ws['!rows'] = [{hpx:20},{hpx:24}];
+  const lastCol = colLetter(REPORT_COLUMNS.length-1);
+  ws['!autofilter'] = { ref: `A2:${lastCol}2` };
+  ws['!freeze'] = { xSplit: 0, ySplit: 2, topLeftCell: 'A3', state: 'frozen' };
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Data Order and Status');
+  XLSX.writeFile(wb, `data-order-and-status-${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 
 /* ---------- Toast ---------- */
