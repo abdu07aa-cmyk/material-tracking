@@ -229,7 +229,7 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
     <div id="tab-inputpi" class="hidden">
       <div class="tab-header"><h2>Input PI — Data Order</h2><p>Buat daftar PI (Purchase Order) beserta jenis barang yang akan dipesan. Satu PI bisa berisi beberapa jenis barang.</p></div>
       <div class="toolbar">
-        <div class="search">🔍<input id="searchInputPi" placeholder="Cari PI No / Nama Barang..." oninput="renderInputPi()"></div>
+        <div class="search">🔍<input id="searchInputPi" placeholder="Cari PI No / PI Specification..." oninput="renderInputPi()"></div>
         <button class="btn btn-primary" onclick="openItemModal()">+ Input PI Baru</button>
       </div>
       <div id="listInputPi"></div>
@@ -238,7 +238,7 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
     <!-- GUDANG -->
     <div id="tab-gudang" class="hidden">
       <div class="tab-header"><h2>Gudang — Penerimaan Barang</h2><p>Catat tiap kali barang datang dari supplier berdasarkan PI yang sudah diinput (bisa parsial / bertahap).</p></div>
-      <div class="toolbar"><div class="search">🔍<input id="searchGudang" placeholder="Cari PI No / Nama Barang..." oninput="renderStage('gudang')"></div></div>
+      <div class="toolbar"><div class="search">🔍<input id="searchGudang" placeholder="Cari PI No / PI Specification..." oninput="renderStage('gudang')"></div></div>
       <div id="listGudang"></div>
     </div>
 
@@ -246,7 +246,7 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
     <div id="tab-qc" class="hidden">
       <div class="tab-header"><h2>Quality Control — In Coming QC</h2><p>Catat hasil pemeriksaan tiap batch barang yang sudah diterima gudang (bisa bertahap).</p></div>
       <div class="toolbar">
-        <div class="search">🔍<input id="searchQc" placeholder="Cari PI No / Nama Barang..." oninput="renderStage('qc')"></div>
+        <div class="search">🔍<input id="searchQc" placeholder="Cari PI No / PI Specification..." oninput="renderStage('qc')"></div>
         <select id="filterQc" class="btn btn-ghost" onchange="renderStage('qc')" style="min-width:160px;">
           <option value="belum">Masih Ada Sisa Diperiksa</option>
           <option value="semua">Semua Barang</option>
@@ -259,7 +259,7 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
     <div id="tab-diecut" class="hidden">
       <div class="tab-header"><h2>Diecut — Divisi Machine</h2><p>Menampilkan barang yang punya batch QC Awal bertanda <b>Sheet</b> dan masih ada sisa belum dipotong. Catat tiap kali barang dipotong di mesin dan dikirim balik ke QC untuk QC Ulang (bisa bertahap).</p></div>
       <div class="toolbar">
-        <div class="search">🔍<input id="searchDiecut" placeholder="Cari PI No / Nama Barang..." oninput="renderStage('diecut')"></div>
+        <div class="search">🔍<input id="searchDiecut" placeholder="Cari PI No / PI Specification..." oninput="renderStage('diecut')"></div>
         <select id="filterDiecut" class="btn btn-ghost" onchange="renderStage('diecut')" style="min-width:160px;">
           <option value="belum">Masih Ada Sisa dari QC</option>
           <option value="semua">Semua Barang Sheet</option>
@@ -272,7 +272,7 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
     <div id="tab-suplai" class="hidden">
       <div class="tab-header"><h2>Suplai Material</h2><p>Catat tiap kali suplai menerima barang (dari QC untuk barang Pcs, atau dari Diecut untuk barang Sheet) — bisa bertahap.</p></div>
       <div class="toolbar">
-        <div class="search">🔍<input id="searchSuplai" placeholder="Cari PI No / Nama Barang..." oninput="renderStage('suplai')"></div>
+        <div class="search">🔍<input id="searchSuplai" placeholder="Cari PI No / PI Specification..." oninput="renderStage('suplai')"></div>
         <select id="filterSuplai" class="btn btn-ghost" onchange="renderStage('suplai')" style="min-width:160px;">
           <option value="belum">Masih Ada Sisa dari QC</option>
           <option value="semua">Semua Barang</option>
@@ -285,7 +285,7 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
     <div id="tab-produksi" class="hidden">
       <div class="tab-header"><h2>Kirim ke Produksi</h2><p>Catat tiap kali suplai mengirim barang ke bagian produksi (bisa bertahap).</p></div>
       <div class="toolbar">
-        <div class="search">🔍<input id="searchProduksi" placeholder="Cari PI No / Nama Barang..." oninput="renderStage('produksi')"></div>
+        <div class="search">🔍<input id="searchProduksi" placeholder="Cari PI No / PI Specification..." oninput="renderStage('produksi')"></div>
         <select id="filterProduksi" class="btn btn-ghost" onchange="renderStage('produksi')" style="min-width:160px;">
           <option value="belum">Masih Ada Sisa di Suplai</option>
           <option value="semua">Semua Barang</option>
@@ -298,7 +298,7 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
     <div id="tab-laporan" class="hidden">
       <div class="tab-header"><h2>Laporan — Data Order and Status</h2><p>Ringkasan per jenis barang (total dari semua transaksi bertahap di tiap tahap).</p></div>
       <div class="toolbar">
-        <div class="search">🔍<input id="searchLaporan" placeholder="Cari PI No / Nama Barang..." oninput="renderLaporan()"></div>
+        <div class="search">🔍<input id="searchLaporan" placeholder="Cari PI No / PI Specification..." oninput="renderLaporan()"></div>
         <button class="btn btn-ghost" onclick="exportExcel()">⭳ Ekspor Excel</button>
       </div>
       <div class="report-scroll">
@@ -313,7 +313,7 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
               <th colspan="3">Produksi</th>
             </tr>
             <tr class="cols">
-              <th class="col-warehouse">PI No</th><th>PI Date</th><th>Brand</th><th>Nama Barang</th><th>PI Qty</th><th>Unit</th><th>Tgl Diterima Gudang</th><th>Qty In (Total)</th><th>Supplier</th><th>Status</th>
+              <th class="col-warehouse">PI No</th><th>PI Date</th><th>Brand</th><th>PI Specification</th><th>Nama Barang</th><th>PI Qty</th><th>Unit</th><th>Tgl Diterima Gudang</th><th>Qty In (Total)</th><th>Supplier</th><th>Status</th>
               <th class="col-qc">Tgl QC Awal</th><th>Good — Sheet (perlu Diecut)</th><th>Good — Pcs (langsung Suplai)</th><th>N.G Awal (Total)</th><th>Status QC Awal</th>
               <th class="col-diecut">Tgl Diecut</th><th>Qty Masuk Diecut</th><th>Qty Keluar Diecut</th><th>Status Diecut</th>
               <th class="col-qc2">Tgl QC Ulang</th><th>Good Ulang (Total)</th><th>N.G Ulang (Total)</th><th>Status QC Ulang</th>
@@ -346,6 +346,7 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
         <div class="field"><label>PI Date</label><input type="date" id="i_pi_date"></div>
       </div>
       <div class="field"><label>Brand</label><input id="i_brand"></div>
+      <div class="field"><label>PI Specification</label><input id="i_pi_spec" placeholder="Spesifikasi PI (contoh: Kertas HVS 80gr)"></div>
 
       <div class="section-title-plain" id="itemRowsLabel" style="margin-top:18px;">Jenis Barang dalam PI Ini</div>
       <p id="itemRowsHint" class="hint-text">Satu PI bisa berisi beberapa jenis barang — tambah barisnya satu per satu.</p>
@@ -643,7 +644,7 @@ function renderDashboard(){
 /* ---------- Input PI Tab ---------- */
 function renderInputPi(){
   const q = (document.getElementById('searchInputPi')?.value || '').toLowerCase();
-  let filtered = items.filter(it => !q || (it.nama_barang||'').toLowerCase().includes(q) || (it.pi_no||'').toLowerCase().includes(q));
+  let filtered = items.filter(it => !q || (it.pi_specification||'').toLowerCase().includes(q) || (it.pi_no||'').toLowerCase().includes(q) || (it.nama_barang||'').toLowerCase().includes(q));
   const el = document.getElementById('listInputPi');
   if(!el) return;
   if(filtered.length===0){
@@ -657,13 +658,14 @@ function renderInputPi(){
     <div class="record-card">
       <div class="top" onclick="openItemModal('${it.id}')">
         <div>
-          <div class="pi-name">${escapeHtml(it.nama_barang || '(Belum diberi nama)')}</div>
+          <div class="pi-name">${escapeHtml(it.nama_barang || it.pi_specification || '(Belum diberi nama)')}</div>
           <div class="sj">PI ${escapeHtml(it.pi_no||'-')} · ${escapeHtml(it.brand||'-')}${it.unit?' · '+escapeHtml(it.unit):''}</div>
         </div>
         ${overallBadge(s)}
       </div>
       <div style="margin-top:8px;font-size:11px;color:var(--muted);">
-        <span>PI Qty: <b>${it.pi_qty??0}</b> ${escapeHtml(it.unit||'')}</span>
+        <span>PI Specification: <b>${escapeHtml(it.pi_specification||'-')}</b></span>
+        <span style="margin-left:16px;">PI Qty: <b>${it.pi_qty??0}</b> ${escapeHtml(it.unit||'')}</span>
         <span style="margin-left:16px;">Sudah diterima Gudang: <b>${s.receivedQty}</b></span>
         <span style="margin-left:16px;">Sisa: <b>${Math.max(0, (it.pi_qty||0) - s.receivedQty)}</b></span>
       </div>
@@ -691,7 +693,7 @@ function renderStage(stage){
   const q = (document.getElementById(searchId)?.value || '').toLowerCase();
   const filterVal = filterId ? (document.getElementById(filterId)?.value || 'belum') : null;
 
-  let filtered = items.filter(it => !q || (it.nama_barang||'').toLowerCase().includes(q) || (it.pi_no||'').toLowerCase().includes(q));
+  let filtered = items.filter(it => !q || (it.pi_specification||'').toLowerCase().includes(q) || (it.pi_no||'').toLowerCase().includes(q) || (it.nama_barang||'').toLowerCase().includes(q));
   if(stage==='diecut'){
     filtered = filtered.filter(it => itemStats(it).hasSheetActivity);
   }
@@ -795,7 +797,7 @@ function itemCardHTML(item, stage, compact){
   <div class="record-card">
     <div class="top" onclick="openItemModal('${item.id}')">
       <div>
-        <div class="pi-name">${escapeHtml(item.nama_barang || '(Belum diberi nama)')}</div>
+        <div class="pi-name">${escapeHtml(item.nama_barang || item.pi_specification || '(Belum diberi nama)')}</div>
         <div class="sj">PI ${escapeHtml(item.pi_no||'-')} · ${escapeHtml(item.brand||'-')}${item.unit?' · '+escapeHtml(item.unit):''}</div>
       </div>
       ${overallBadge(s)}
@@ -866,6 +868,7 @@ function openItemModal(id){
     document.getElementById('i_pi_no').value = it.pi_no || '';
     document.getElementById('i_pi_date').value = it.pi_date || '';
     document.getElementById('i_brand').value = it.brand || '';
+    document.getElementById('i_pi_spec').value = it.pi_specification || '';
     document.getElementById('itemRowsLabel').textContent = 'Jenis Barang';
     document.getElementById('itemRowsHint').textContent = 'Mengedit satu jenis barang ini saja.';
     document.getElementById('addRowBtn').classList.add('hidden');
@@ -873,7 +876,7 @@ function openItemModal(id){
   } else {
     document.getElementById('itemModalTitle').textContent = 'Tambah PI Baru';
     document.getElementById('itemDeleteBtn').classList.add('hidden');
-    ['i_pi_no','i_pi_date','i_brand'].forEach(f=>document.getElementById(f).value='');
+    ['i_pi_no','i_pi_date','i_brand','i_pi_spec'].forEach(f=>document.getElementById(f).value='');
     document.getElementById('itemRowsLabel').textContent = 'Jenis Barang dalam PI Ini';
     document.getElementById('itemRowsHint').textContent = 'Satu PI bisa berisi beberapa jenis barang — tambah barisnya satu per satu.';
     document.getElementById('addRowBtn').classList.remove('hidden');
@@ -888,11 +891,13 @@ async function saveItem(){
   const pi_no = document.getElementById('i_pi_no').value || null;
   const pi_date = document.getElementById('i_pi_date').value || null;
   const brand = document.getElementById('i_brand').value || null;
+  const pi_specification = document.getElementById('i_pi_spec').value || null;
 
   if(id){
     const key = itemRowKeys[0];
     const payload = {
       pi_no, pi_date, brand,
+      pi_specification: pi_specification,
       nama_barang: document.getElementById('row_'+key+'_nama').value || null,
       pi_qty: document.getElementById('row_'+key+'_qty').value || null,
       unit: document.getElementById('row_'+key+'_unit').value || null
@@ -907,6 +912,7 @@ async function saveItem(){
 
   const rows = itemRowKeys.map(key=>({
     pi_no, pi_date, brand,
+    pi_specification: pi_specification,
     nama_barang: document.getElementById('row_'+key+'_nama').value || null,
     pi_qty: document.getElementById('row_'+key+'_qty').value || null,
     unit: document.getElementById('row_'+key+'_unit').value || null
@@ -945,7 +951,7 @@ function openEntryModal(stage, itemId, entryId){
 
   const s = itemStats(item);
   document.getElementById('entryRefBlock').innerHTML =
-    `Barang: <b>${escapeHtml(item.nama_barang||'-')}</b> &nbsp;|&nbsp; PI No: <b>${escapeHtml(item.pi_no||'-')}</b><br>
+    `Barang: <b>${escapeHtml(item.nama_barang || item.pi_specification || '-')}</b> &nbsp;|&nbsp; PI No: <b>${escapeHtml(item.pi_no||'-')}</b><br>
     Diterima Gudang: <b>${s.receivedQty}</b> ${escapeHtml(item.unit||'')} · QC Awal — Good Sheet (perlu Diecut): <b>${s.goodQtyGudangSheet}</b> · Good Pcs (langsung Suplai): <b>${s.goodQtyGudangPcs}</b> · N.G: <b>${s.ngQtyGudang}</b><br>
     Diecut (masuk/keluar): <b>${s.diecutInQty}/${s.diecutOutQty}</b> · QC Ulang (good/ng): <b>${s.goodQtyDiecut}/${s.ngQtyDiecut}</b> · Ke Suplai: <b>${s.suppliedQty}</b> · Ke Produksi: <b>${s.producedQty}</b>`;
 
@@ -1015,7 +1021,7 @@ async function deleteEntry(){
 /* ---------- Laporan ---------- */
 function renderLaporan(){
   const q = (document.getElementById('searchLaporan')?.value || '').toLowerCase();
-  const filtered = items.filter(it => !q || (it.nama_barang||'').toLowerCase().includes(q) || (it.pi_no||'').toLowerCase().includes(q));
+  const filtered = items.filter(it => !q || (it.pi_specification||'').toLowerCase().includes(q) || (it.pi_no||'').toLowerCase().includes(q) || (it.nama_barang||'').toLowerCase().includes(q));
   const body = document.getElementById('reportBody');
   if(!body) return;
   if(filtered.length===0){ body.innerHTML = `<tr><td colspan="29" style="text-align:center;color:var(--muted);font-family:'Inter';padding:30px;">Belum ada data</td></tr>`; return; }
@@ -1025,6 +1031,7 @@ function renderLaporan(){
       <td class="col-warehouse">${escapeHtml(it.pi_no||'')}</td>
       <td>${it.pi_date||''}</td>
       <td>${escapeHtml(it.brand||'')}</td>
+      <td>${escapeHtml(it.pi_specification||'')}</td>
       <td>${escapeHtml(it.nama_barang||'')}</td>
       <td>${it.pi_qty??''}</td>
       <td>${escapeHtml(it.unit||'')}</td>
@@ -1060,6 +1067,7 @@ const REPORT_COLUMNS = [
   {h:'PI No', w:16},
   {h:'PI Date', w:12},
   {h:'Brand', w:14},
+  {h:'PI Specification', w:20},
   {h:'Nama Barang', w:20},
   {h:'PI Qty', w:9},
   {h:'Unit', w:8},
@@ -1088,7 +1096,7 @@ const REPORT_COLUMNS = [
   {h:'Status Produksi Terakhir', w:16}
 ];
 const REPORT_GROUPS = [
-  {label:'Wharehouse — PI Data', span:10},
+  {label:'Wharehouse — PI Data', span:11},
   {label:'QC Awal', span:5},
   {label:'Diecut — Divisi Machine', span:4},
   {label:'QC Ulang (Setelah Diecut)', span:4},
@@ -1098,7 +1106,7 @@ const REPORT_GROUPS = [
 
 function reportRowValues(it){
   const s = itemStats(it);
-  return [it.pi_no, it.pi_date, it.brand, it.nama_barang, it.pi_qty, it.unit, s.lastReceiptDate, s.receivedQty, s.lastSupplier, s.lastMaterialStatus,
+  return [it.pi_no, it.pi_date, it.brand, it.pi_specification, it.nama_barang, it.pi_qty, it.unit, s.lastReceiptDate, s.receivedQty, s.lastSupplier, s.lastMaterialStatus,
     s.lastQcGudangDate, s.goodQtyGudangSheet, s.goodQtyGudangPcs, s.ngQtyGudang, s.lastQcGudangStatus,
     s.hasSheetActivity ? s.lastDiecutDate : '', s.hasSheetActivity ? s.diecutInQty : '', s.hasSheetActivity ? s.diecutOutQty : '', s.hasSheetActivity ? s.lastMachineStatus : '',
     s.hasSheetActivity ? s.lastQcDiecutDate : '', s.hasSheetActivity ? s.goodQtyDiecut : '', s.hasSheetActivity ? s.ngQtyDiecut : '', s.hasSheetActivity ? s.lastQcDiecutStatus : '',
