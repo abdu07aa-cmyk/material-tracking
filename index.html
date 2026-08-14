@@ -47,7 +47,7 @@ h1,h2,h3,.display{font-family:'Oswald',sans-serif; text-transform:uppercase; let
 
 /* Tabs */
 .tabbar{position:sticky; top:60px; z-index:39; display:flex; background:var(--paper-2); border-bottom:1px solid var(--line); overflow-x:auto;}
-.tabbar button{flex:1; min-width:88px; border:none; background:transparent; padding:12px 5px; font-family:'Oswald',sans-serif; font-size:10.5px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); cursor:pointer; border-bottom:3px solid transparent; white-space:nowrap;}
+.tabbar button{flex:1; min-width:80px; border:none; background:transparent; padding:12px 5px; font-family:'Oswald',sans-serif; font-size:10.5px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); cursor:pointer; border-bottom:3px solid transparent; white-space:nowrap;}
 .tabbar button.active{color:var(--steel-dark); border-bottom-color:var(--steel);}
 
 .wrap{max-width:1200px; margin:0 auto; padding:16px;}
@@ -66,7 +66,7 @@ h1,h2,h3,.display{font-family:'Oswald',sans-serif; text-transform:uppercase; let
 .stat-card.accent-green{border-left:4px solid var(--green);}
 .stat-card.accent-purple{border-left:4px solid var(--purple);}
 
-/* Pipeline (4 stages now) */
+/* Pipeline (6 stages now) */
 .pipeline{display:flex; align-items:center; gap:4px; margin:8px 0 2px;}
 .pipeline .seg{flex:1; height:6px; border-radius:3px; background:var(--line);}
 .pipeline .seg.done{background:var(--steel);}
@@ -202,6 +202,7 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
 
   <div class="tabbar">
     <button class="tab-btn active" data-tab="dashboard" onclick="switchTab('dashboard')">Dashboard</button>
+    <button class="tab-btn" data-tab="inputpi" onclick="switchTab('inputpi')">Input PI</button>
     <button class="tab-btn" data-tab="gudang" onclick="switchTab('gudang')">Gudang</button>
     <button class="tab-btn" data-tab="qc" onclick="switchTab('qc')">QC</button>
     <button class="tab-btn" data-tab="diecut" onclick="switchTab('diecut')">Diecut</button>
@@ -224,9 +225,19 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
       <div id="recentList"></div>
     </div>
 
+    <!-- INPUT PI (NEW) -->
+    <div id="tab-inputpi" class="hidden">
+      <div class="tab-header"><h2>Input PI — Data Order</h2><p>Buat daftar PI (Purchase Order) beserta jenis barang yang akan dipesan. Satu PI bisa berisi beberapa jenis barang.</p></div>
+      <div class="toolbar">
+        <div class="search">🔍<input id="searchInputPi" placeholder="Cari PI No / Spec..." oninput="renderInputPi()"></div>
+        <button class="btn btn-primary" onclick="openItemModal()">+ Input PI Baru</button>
+      </div>
+      <div id="listInputPi"></div>
+    </div>
+
     <!-- GUDANG -->
     <div id="tab-gudang" class="hidden">
-      <div class="tab-header"><h2>Gudang — PI Data</h2><p>Kelola jenis barang per PI, dan catat tiap kali barang datang dari supplier (bisa parsial / bertahap).</p></div>
+      <div class="tab-header"><h2>Gudang — Penerimaan Barang</h2><p>Catat tiap kali barang datang dari supplier berdasarkan PI yang sudah diinput (bisa parsial / bertahap).</p></div>
       <div class="toolbar"><div class="search">🔍<input id="searchGudang" placeholder="Cari PI Spec / PI No..." oninput="renderStage('gudang')"></div></div>
       <div id="listGudang"></div>
     </div>
@@ -324,7 +335,7 @@ table.report tbody tr:nth-child(even){background:#fafaf8;}
 <div class="modal-backdrop" id="itemModal">
   <div class="modal">
     <div class="modal-head" style="background:var(--steel);">
-      <div><div class="eyebrow">Gudang</div><h2 id="itemModalTitle">Tambah PI Baru</h2></div>
+      <div><div class="eyebrow">Input PI</div><h2 id="itemModalTitle">Tambah PI Baru</h2></div>
       <button class="icon-btn" onclick="closeItemModal()">✕</button>
     </div>
     <div class="modal-body">
@@ -476,8 +487,6 @@ const FIELDS_BY_STAGE = {
   suplai:   ['supply_date','supply_qty','total_material','supply_status'],
   produksi: ['production_date','production_qty','production_status','notes']
 };
-// diecut's "notes" field uses a differently-named input id (e_diecut_notes) to avoid
-// clashing with produksi's "notes" input (e_notes) since both share the same modal.
 function entryFieldElId(stage, f){
   if(stage==='diecut' && f==='notes') return 'e_diecut_notes';
   return 'e_'+f;
@@ -514,10 +523,11 @@ function openSettings(){
 /* ---------- Tabs ---------- */
 function switchTab(tab){
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
-  ['dashboard','gudang','qc','diecut','suplai','produksi','laporan'].forEach(t=>{
+  ['dashboard','inputpi','gudang','qc','diecut','suplai','produksi','laporan'].forEach(t=>{
     document.getElementById('tab-'+t).classList.toggle('hidden', t!==tab);
   });
-  document.getElementById('fabAdd').classList.toggle('hidden', tab==='dashboard' || tab==='laporan');
+  document.getElementById('fabAdd').classList.toggle('hidden', tab==='dashboard' || tab==='laporan' || tab==='gudang' || tab==='qc' || tab==='diecut' || tab==='suplai' || tab==='produksi');
+  if(tab==='inputpi') renderInputPi();
   if(['gudang','qc','diecut','suplai','produksi'].includes(tab)) renderStage(tab);
   if(tab==='laporan') renderLaporan();
 }
@@ -536,6 +546,7 @@ async function loadAll(){
   if(errs.length){ showToast('Gagal memuat data: '+errs[0].message); return; }
   items = i.data||[]; receipts = r.data||[]; qcEntries = q.data||[]; machineEntries = m.data||[]; supplyEntries = s.data||[]; productionEntries = p.data||[];
   renderDashboard();
+  renderInputPi();
   renderStage('gudang'); renderStage('qc'); renderStage('diecut'); renderStage('suplai'); renderStage('produksi');
   renderLaporan();
 }
@@ -552,10 +563,6 @@ function itemStats(item){
   const sup = childrenOf(supplyEntries, item.id);
   const prod = childrenOf(productionEntries, item.id);
 
-  // QC Awal = pemeriksaan barang yang baru datang dari Gudang. Tiap batch QC Awal
-  // dicatat manual bentuknya: Sheet (perlu Diecut dulu) atau Pcs (langsung ke Suplai) —
-  // karena dalam 1 PI yang sama, kiriman supplier bisa campur Sheet dan Pcs.
-  // QC Ulang = pemeriksaan barang yang baru selesai dipotong di Diecut (otomatis sudah Pcs).
   const qcGudang = qcAll.filter(e => (e.source_stage||'Gudang') !== 'Diecut');
   const qcDiecut = qcAll.filter(e => e.source_stage === 'Diecut');
   const qcGudangSheet = qcGudang.filter(e => e.bentuk_diperiksa === 'Sheet');
@@ -577,8 +584,6 @@ function itemStats(item){
   const suppliedQty = sumQty(sup,'supply_qty');
   const producedQty = sumQty(prod,'production_qty');
 
-  // Barang yang lolos QC Awal dalam bentuk Pcs langsung siap ke Suplai;
-  // yang masih Sheet harus lewat Diecut lalu QC Ulang dulu baru siap ke Suplai.
   const supplyBase = goodQtyGudangPcs + goodQtyDiecut;
   const hasSheetActivity = goodQtyGudangSheet>0 || diecutInQty>0 || diecutOutQty>0 || qcDiecutQty>0;
 
@@ -631,8 +636,43 @@ function renderDashboard(){
 
   const recent = items.slice(0,5);
   const el = document.getElementById('recentList');
-  if(recent.length===0){ el.innerHTML = `<div class="empty"><div class="glyph">📦</div>Belum ada barang. Buka menu Gudang untuk menambah jenis barang pertama.</div>`; return; }
+  if(recent.length===0){ el.innerHTML = `<div class="empty"><div class="glyph">📦</div>Belum ada barang. Buka menu Input PI untuk menambah jenis barang pertama.</div>`; return; }
   el.innerHTML = recent.map(it=>itemCardHTML(it,'gudang',true)).join('');
+}
+
+/* ---------- Input PI Tab ---------- */
+function renderInputPi(){
+  const q = (document.getElementById('searchInputPi')?.value || '').toLowerCase();
+  let filtered = items.filter(it => !q || (it.pi_specification||'').toLowerCase().includes(q) || (it.pi_no||'').toLowerCase().includes(q));
+  const el = document.getElementById('listInputPi');
+  if(!el) return;
+  if(filtered.length===0){
+    el.innerHTML = `<div class="empty"><div class="glyph">📋</div>Belum ada PI. Klik tombol "Input PI Baru" untuk membuat data order.</div>`;
+    return;
+  }
+  el.innerHTML = filtered.map(it=>{
+    const s = itemStats(it);
+    let history = historyHTML(STAGE.gudang.arr().filter(x=>x.pi_item_id===it.id), 'gudang');
+    return `
+    <div class="record-card">
+      <div class="top" onclick="openItemModal('${it.id}')">
+        <div>
+          <div class="pi-name">${escapeHtml(it.pi_specification || '(Belum diberi nama)')}</div>
+          <div class="sj">PI ${escapeHtml(it.pi_no||'-')} · ${escapeHtml(it.brand||'-')}${it.unit?' · '+escapeHtml(it.unit):''}</div>
+        </div>
+        ${overallBadge(s)}
+      </div>
+      <div style="margin-top:8px;font-size:11px;color:var(--muted);">
+        <span>PI Qty: <b>${it.pi_qty??0}</b> ${escapeHtml(it.unit||'')}</span>
+        <span style="margin-left:16px;">Sudah diterima Gudang: <b>${s.receivedQty}</b></span>
+        <span style="margin-left:16px;">Sisa: <b>${Math.max(0, (it.pi_qty||0) - s.receivedQty)}</b></span>
+      </div>
+      <div class="history">${history}</div>
+      <div class="card-actions">
+        <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();openItemModal('${it.id}')">✏️ Edit PI</button>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 /* ---------- Stage tabs (Gudang/QC/Diecut/Suplai/Produksi) ---------- */
@@ -653,8 +693,6 @@ function renderStage(stage){
 
   let filtered = items.filter(it => !q || (it.pi_specification||'').toLowerCase().includes(q) || (it.pi_no||'').toLowerCase().includes(q));
   if(stage==='diecut'){
-    // Diecut relevan untuk item mana pun yang PERNAH punya batch QC Awal bertanda Sheet,
-    // bukan berdasarkan flag tetap di level PI (karena 1 PI bisa terima campuran Sheet & Pcs).
     filtered = filtered.filter(it => itemStats(it).hasSheetActivity);
   }
   if(filterVal==='belum') filtered = filtered.filter(it=>stageFilterPredicate(stage, it));
@@ -662,7 +700,7 @@ function renderStage(stage){
   const el = document.getElementById(listId);
   if(!el) return;
   if(filtered.length===0){
-    const msgs = {gudang:'Belum ada jenis barang. Ketuk tombol + untuk menambah.', qc:'Tidak ada barang yang perlu diperiksa QC saat ini.', diecut:'Tidak ada barang Sheet yang perlu diproses Diecut saat ini.', suplai:'Tidak ada barang yang perlu diterima suplai saat ini.', produksi:'Tidak ada barang yang perlu dikirim ke produksi saat ini.'};
+    const msgs = {gudang:'Belum ada barang yang diterima. Pastikan PI sudah diinput dan barang sudah datang.', qc:'Tidak ada barang yang perlu diperiksa QC saat ini.', diecut:'Tidak ada barang Sheet yang perlu diproses Diecut saat ini.', suplai:'Tidak ada barang yang perlu diterima suplai saat ini.', produksi:'Tidak ada barang yang perlu dikirim ke produksi saat ini.'};
     const glyphs = {gudang:'🏭', qc:'✅', diecut:'⚙️', suplai:'🚚', produksi:'🏗️'};
     el.innerHTML = `<div class="empty"><div class="glyph">${glyphs[stage]}</div>${msgs[stage]}</div>`;
     return;
@@ -672,8 +710,6 @@ function renderStage(stage){
 
 /* ---------- Card rendering ---------- */
 function pipelineHTML(s){
-  // Barang Sheet: Gudang → QC Awal → Diecut → QC Ulang → Suplai → Produksi (6 tahap)
-  // Barang Pcs:   Gudang → QC → Suplai → Produksi (4 tahap, lompat Diecut & QC Ulang)
   if(s.hasSheetActivity){
     let idx = 0.5;
     if(s.receivedQty>0) idx = 1.5;
@@ -709,7 +745,6 @@ function pipelineHTML(s){
 }
 
 function overallBadge(s){
-  // Status di sini murni menampilkan input status manual terakhir, bukan tebakan otomatis.
   const stagesInOrder = s.hasSheetActivity
     ? [['Produksi', s.lastProdStatus], ['Suplai', s.lastSupplyStatus], ['QC Ulang', s.lastQcDiecutStatus], ['Diecut', s.lastMachineStatus], ['QC Awal', s.lastQcGudangStatus], ['Gudang', s.lastMaterialStatus]]
     : [['Produksi', s.lastProdStatus], ['Suplai', s.lastSupplyStatus], ['QC', s.lastQcGudangStatus], ['Gudang', s.lastMaterialStatus]];
@@ -919,9 +954,7 @@ function openEntryModal(stage, itemId, entryId){
     if(el) el.value = '';
   });
   if(stage==='qc' && !entryId){
-    // Default cerdas (bisa diganti manual): kalau ada Qty Diecut yang sudah keluar tapi belum di-QC-ulang, arahkan ke QC Ulang.
     document.getElementById('e_source_stage').value = (s.remainToQcDiecut>0) ? 'Diecut' : 'Gudang';
-    // Bentuk yang diperiksa default mengikuti SJ/DO Unit dari penerimaan gudang terakhir.
     const lastReceiptUnit = s.rec.length ? s.rec[s.rec.length-1].sj_do_unit : null;
     document.getElementById('e_bentuk_diperiksa').value = (lastReceiptUnit==='Sheet') ? 'Sheet' : 'Pcs';
   }
@@ -1022,7 +1055,7 @@ function renderLaporan(){
   }).join('');
 }
 
-/* ---------- Excel export (.xlsx rapi, header berkelompok) ---------- */
+/* ---------- Excel export ---------- */
 const REPORT_COLUMNS = [
   {h:'PI No', w:16},
   {h:'PI Date', w:12},
@@ -1092,7 +1125,6 @@ function exportExcel(){
 
   const ws = XLSX.utils.aoa_to_sheet([groupRow, headerRow, ...dataRows]);
 
-  // Merge tiap grup header di baris pertama
   let col = 0;
   ws['!merges'] = REPORT_GROUPS.map(g=>{
     const m = { s:{r:0,c:col}, e:{r:0,c:col+g.span-1} };
