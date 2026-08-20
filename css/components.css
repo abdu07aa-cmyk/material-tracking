@@ -1,0 +1,54 @@
+/* ============================================================
+   COMPONENTS — buttons, badges, record cards, history rows
+   ============================================================ */
+
+.btn{
+  border:none; border-radius:9px; padding:10px 16px;
+  font-family:var(--font-body); font-weight:600; font-size:13px;
+  cursor:pointer; display:inline-flex; align-items:center; gap:6px;
+  transition:background .15s ease, transform .1s ease;
+}
+.btn:active{ transform:translateY(1px); }
+.btn-primary{ background:var(--steel); color:#fff; }
+.btn-primary:hover{ background:var(--steel-dark); }
+.btn-ghost{ background:var(--surface); color:var(--ink); border:1px solid var(--line); }
+.btn-ghost:hover{ background:var(--surface-sunk); }
+.btn-danger{ background:var(--red); color:#fff; }
+.btn-danger:hover{ background:#8f3220; }
+.btn-sm{ padding:7px 12px; font-size:12px; }
+.btn svg{ width:14px; height:14px; }
+
+.badge{
+  font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+  padding:5px 10px; border-radius:20px; white-space:nowrap; font-family:var(--font-mono);
+}
+.badge-green{ background:var(--green-bg); color:var(--green-dark); }
+.badge-amber{ background:var(--amber-bg); color:var(--amber-dark); }
+.badge-red{ background:var(--red-bg); color:var(--red); }
+.badge-grey{ background:var(--surface-sunk); color:var(--ink-soft); }
+.badge-violet{ background:var(--violet-bg); color:var(--violet-dark); }
+
+/* Record card */
+.record-card{
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+  padding:16px; margin-bottom:11px; box-shadow:var(--shadow-1);
+  transition:box-shadow .15s ease, border-color .15s ease;
+}
+.record-card:hover{ box-shadow:var(--shadow-2); border-color:var(--line-strong); }
+.record-card .top{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; cursor:pointer; }
+.record-card .pi-name{ font-weight:700; font-size:14.5px; letter-spacing:.005em; }
+.record-card .sj{ font-family:var(--font-mono); font-size:11px; color:var(--muted); margin-top:3px; }
+.record-card .desc{ font-family:var(--font-body); font-style:italic; font-size:11.5px; color:var(--ink-soft); margin-top:2px; }
+
+.history{ margin-top:12px; border-top:1px dashed var(--line); padding-top:9px; }
+.history-row{
+  display:flex; justify-content:space-between; align-items:center; gap:10px;
+  font-size:11.5px; padding:6px 4px; cursor:pointer; color:var(--ink); border-radius:6px;
+  font-family:var(--font-mono);
+}
+.history-row:hover{ color:var(--steel-dark); background:var(--steel-bg); }
+.history-row .l{ color:var(--muted); flex-shrink:0; }
+.history-row .r{ text-align:right; }
+.history-empty{ font-size:11.5px; color:var(--muted); padding:5px 4px; font-style:italic; }
+.card-actions{ display:flex; gap:8px; margin-top:12px; }
+.card-actions .btn{ flex:1; justify-content:center; }

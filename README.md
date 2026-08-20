@@ -1,57 +1,94 @@
 # Material Tracking — Data Order & Status
 
-Web app mobile-friendly untuk mencatat alur material dari PI sampai ke produksi:
-**Gudang (terima dari supplier) → QC (periksa) → Suplai Material (terima dari QC) → Produksi (kirim ke lini produksi)**
+Aplikasi pelacakan material multi-tahap (Gudang → QC Awal → Diecut →
+QC Ulang → Suplai → Produksi), berjalan penuh di browser dan disimpan
+di Supabase. Struktur proyek ini sudah dipecah jadi file-file terpisah
+(HTML / CSS / JS) supaya lebih mudah dirawat, di-*review* di GitHub, dan
+dikembangkan lebih lanjut — **tanpa mengubah skema data Supabase yang
+sudah kamu pakai sekarang.**
 
-Didesain untuk kondisi nyata di lapangan:
-- **1 PI bisa berisi banyak jenis barang** — tiap jenis barang jadi 1 kartu tersendiri.
-- **Barang datang dari supplier bisa parsial / bertahap** — tiap kedatangan dicatat sebagai transaksi baru, jumlahnya otomatis dijumlahkan.
-- **QC ke Suplai, dan Suplai ke Produksi, juga bisa parsial** — sama, dicatat bertahap dan dijumlahkan otomatis.
+```
+material-tracking/
+├── index.html              ← struktur halaman & semua modal
+├── css/
+│   ├── tokens.css          ← warna, tipografi, radius, shadow (design tokens)
+│   ├── layout.css          ← app bar, tab, kartu statistik, pipeline, toolbar
+│   ├── components.css      ← tombol, badge, kartu data (record-card)
+│   ├── modals.css          ← modal tambah/edit barang & transaksi
+│   └── misc.css            ← layar setup Supabase, toast, tabel laporan
+└── js/
+    ├── config.js            ← peta tahap → tabel Supabase & daftar field form
+    ├── utils.js              ← escapeHtml, toast, penomoran kolom Excel
+    ├── state.js               ← state di memori + loadAll() dari Supabase
+    ├── aggregate.js           ← itemStats() — semua perhitungan qty per barang
+    ├── connection.js          ← simpan/pakai kredensial Supabase (localStorage)
+    ├── tabs.js                 ← navigasi antar tab
+    ├── dashboard.js            ← kartu ringkasan & aktivitas terbaru
+    ├── stage-view.js           ← daftar per tahap, pipeline, progress bar, riwayat
+    ├── item-modal.js           ← form tambah/edit jenis barang (pi_items)
+    ├── entry-modal.js          ← form catat transaksi per tahap
+    ├── report.js                ← tabel Laporan + ekspor Excel (.xlsx)
+    └── app.js                   ← baris terakhir yang dijalankan: boot aplikasi
+```
 
-Isi paket ini:
-- `index.html` — aplikasinya (1 file saja)
-- `schema.sql` — perintah untuk membuat struktur database di Supabase (otomatis memindahkan data lama kalau ada)
-- `README.md` — panduan ini
+Tidak ada langkah build. Buka `index.html` langsung di browser, atau
+deploy foldernya apa adanya ke GitHub Pages / Netlify / Vercel / hosting
+statis lainnya.
 
----
+## 1. Menghubungkan ke Supabase
 
-## Langkah 1 — Buat / perbarui database Supabase
+Saat pertama kali dibuka, aplikasi meminta:
 
-1. Buka Supabase Dashboard project kamu → **SQL Editor** → **New query**.
-2. Copy semua isi `schema.sql`, paste, klik **Run**.
-   - Kalau ini project **baru**: langsung membuat 5 tabel (`pi_items`, `receipts`, `qc_entries`, `supply_entries`, `production_entries`).
-   - Kalau kamu **sudah pernah pakai versi lama** (tabel `material_tracking`, 1 baris = 1 order): script ini otomatis memindahkan semua data lamamu ke struktur baru, dan tabel lama diganti nama jadi `material_tracking_legacy` (tidak dihapus, aman sebagai cadangan).
-3. Cek di **Table Editor** — harus muncul tabel `pi_items`, `receipts`, `qc_entries`, `supply_entries`, `production_entries`.
+- **Supabase Project URL** — dari Supabase Dashboard → *Settings → API*
+- **Supabase Anon Public Key** — dari halaman yang sama
 
-## Langkah 2 — Upload `index.html` ke GitHub (timpa file lama)
+Dua nilai ini disimpan di `localStorage` browser kamu saja (key
+`mt_supabase_url` dan `mt_supabase_key`), tidak dikirim ke server lain.
+Untuk mengganti koneksi nanti, klik ikon ⚙ di pojok kanan atas.
 
-Upload dan timpa file `index.html` di repo GitHub kamu seperti biasa (**Add file → Upload files**, lalu Commit). Kalau GitHub Pages sudah aktif, tidak perlu setting ulang — cukup tunggu ~1 menit lalu refresh link-nya.
+## 2. Skema tabel (TIDAK BERUBAH)
 
-## Langkah 3 — Buka aplikasinya
+Aplikasi ini memakai persis nama tabel dan nama kolom yang sama seperti
+versi sebelumnya, jadi data yang sudah ada di project Supabase kamu
+tetap terbaca tanpa migrasi apa pun:
 
-Data URL & key Supabase yang sudah tersimpan di browser tetap terpakai (tidak perlu input ulang), karena strukturnya nyambung ke project Supabase yang sama.
+| Tabel | Dipakai untuk |
+|---|---|
+| `pi_items` | Master jenis barang per PI (pi_no, pi_date, brand, pi_specification, description, pi_qty, unit) |
+| `receipts` | Transaksi Gudang (supplier, sj_do_no, sj_do_date, sj_do_qty, sj_do_unit, delivery_date_to_qc, status_material) |
+| `qc_entries` | Transaksi QC Awal & QC Ulang (source_stage, bentuk_diperiksa, inspection_date, good_material, ng_material, qc_status, delivery_supply_material) |
+| `machine_entries` | Transaksi Diecut (machine_date, qty_in, qty_out, machine_status, notes) |
+| `supply_entries` | Transaksi Suplai (supply_date, supply_qty, total_material, supply_status) |
+| `production_entries` | Transaksi Produksi (production_date, production_qty, production_status, notes) |
 
----
+Semua tabel transaksi punya kolom `pi_item_id` yang merujuk ke `pi_items.id`.
 
-## Cara pakai aplikasi
+**Penting:** jangan mengganti nama tabel/kolom di Supabase — jika perlu
+menambah field baru, tambahkan kolom baru saja (jangan rename), lalu
+tambahkan nama field itu ke `FIELDS_BY_STAGE` di `js/config.js` dan ke
+input yang sesuai di `index.html`.
 
-Aplikasi punya **6 menu**:
+## 3. Alur kerja aplikasi
 
-- **Dashboard** — ringkasan jumlah jenis barang, yang masih ada sisa belum diperiksa QC, total qty lulus QC, dan total qty yang sudah terkirim ke produksi.
-- **Gudang** — tempat menambah **jenis barang baru** (tombol + di kanan bawah: isi PI No, PI Date, Brand, PI Specification, PI Qty, Unit). Untuk tiap jenis barang, ada tombol **"+ Catat Gudang"** untuk mencatat setiap kali barang datang dari supplier — bisa dipakai berkali-kali kalau kirimnya bertahap, semua otomatis dijumlahkan dan dibandingkan dengan PI Qty yang dipesan.
-- **QC** — daftar barang yang masih ada sisa belum diperiksa. Tombol **"+ Catat Quality Control"** mencatat satu kali pemeriksaan (Good Material, N.G Material, dll) — bisa dicatat berkali-kali untuk batch yang berbeda.
-- **Suplai** — daftar barang yang masih ada sisa hasil QC belum diterima suplai. Tombol **"+ Catat Suplai Material"** mencatat tiap kali suplai menerima kiriman dari QC.
-- **Produksi** *(menu baru)* — daftar barang yang masih ada sisa di suplai belum dikirim ke produksi. Tombol **"+ Catat Produksi"** mencatat tiap kali suplai mengirim barang ke bagian produksi.
-- **Laporan** — tabel ringkasan per jenis barang: total diterima, total good/NG, total ke suplai, total ke produksi, beserta status terakhir dan sisa di tiap tahap. Bisa dicari dan diekspor ke CSV untuk laporan ke atasan.
+1. **Gudang** — buat PI baru (bisa berisi beberapa jenis barang sekaligus),
+   lalu catat tiap kedatangan barang dari supplier (bisa bertahap/parsial).
+2. **QC** — periksa barang yang sudah diterima gudang. Barang bisa ditandai
+   **Sheet** (perlu Diecut dulu) atau **Pcs** (langsung siap ke Suplai).
+3. **Diecut** — khusus barang Sheet: catat hasil potong mesin, lalu kirim
+   balik ke QC untuk **QC Ulang**.
+4. **Suplai** — terima barang yang sudah lolos QC (baik jalur Pcs langsung
+   maupun jalur Sheet setelah QC Ulang).
+5. **Produksi** — catat pengiriman dari Suplai ke bagian produksi.
+6. **Laporan** — ringkasan seluruh tahap per jenis barang, dengan tombol
+   ekspor ke file `.xlsx` (header berkelompok, siap dibuka di Excel).
 
-**Mengedit info dasar barang** (PI No, Brand, PI Specification, dst) — ketuk bagian judul kartu (bukan tombol "+ Catat...") di menu Gudang untuk membuka form edit, termasuk tombol Hapus (menghapus jenis barang beserta seluruh riwayat transaksinya di semua tahap — dipakai hati-hati).
+## 4. Pengembangan lanjutan di GitHub
 
-**Melihat / mengedit riwayat transaksi** — tiap kartu barang menampilkan beberapa transaksi terakhir di bagian bawah; ketuk salah satu baris riwayat untuk membuka & mengedit transaksi tersebut.
+Karena sudah dipecah per file, alur kerja Git jadi jauh lebih rapi:
+setiap perubahan tampilan (CSS), logika satu tahap (mis. `stage-view.js`),
+atau laporan (`report.js`) bisa di-*commit* dan di-*review* terpisah tanpa
+menyentuh file lain.
 
-## Catatan keamanan (penting dibaca sebelum dipakai luas)
-
-Versi ini didesain untuk kemudahan (siapa pun yang punya link + key bisa input/edit data), cocok untuk tim internal kecil. Kalau nanti perlu login per-user (misalnya beda hak akses untuk Gudang, QC, Suplai, dan Produksi), tinggal bilang — bisa ditambahkan **Supabase Auth** tanpa mengubah struktur data yang sudah ada.
-
-## Kalau mau kustomisasi lebih lanjut
-
-Semua tampilan & kolom ada di satu file `index.html`. Kalau butuh kolom tambahan, laporan berbeda, atau menu baru lagi (misalnya retur barang), tinggal bilang.
+Saran struktur *branch*:
+- `main` — versi yang dipakai tim (bisa langsung di-deploy)
+- `feature/...` — untuk perubahan per fitur, lalu pull request ke `main`
