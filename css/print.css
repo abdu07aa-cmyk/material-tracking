@@ -1,0 +1,36 @@
+/* ============================================================
+   PRINT — activated by adding body.print-report just before
+   window.print() (see printReport() in js/report.js). Only the
+   Laporan table is shown; everything else is hidden for print.
+   ============================================================ */
+
+@media print{
+  @page{ size: A4 landscape; margin:10mm; }
+
+  body.print-report .appbar,
+  body.print-report .tabbar,
+  body.print-report .fab,
+  body.print-report .toast,
+  body.print-report .modal-backdrop,
+  body.print-report #tab-dashboard,
+  body.print-report #tab-pi,
+  body.print-report #tab-gudang,
+  body.print-report #tab-qc,
+  body.print-report #tab-diecut,
+  body.print-report #tab-suplai,
+  body.print-report #tab-produksi,
+  body.print-report .toolbar{
+    display:none !important;
+  }
+
+  body.print-report{ background:#fff; padding:0; }
+  body.print-report .wrap{ max-width:none; padding:0; }
+  body.print-report #tab-laporan{ display:block !important; }
+  body.print-report .tab-header p{ display:none; }
+  body.print-report .tab-header h2::before{ content:'Material Tracking — '; }
+
+  body.print-report .report-scroll{ overflow:visible; border:none; box-shadow:none; }
+  body.print-report table.report{ min-width:0; width:100%; font-size:8.5px; }
+  body.print-report table.report th, body.print-report table.report td{ padding:3px 4px; }
+  body.print-report table.report thead tr.cols th{ position:static; }
+}

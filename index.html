@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>Material Tracking — Data Order &amp; Status</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/layout.css">
+<link rel="stylesheet" href="css/components.css">
+<link rel="stylesheet" href="css/modals.css">
+<link rel="stylesheet" href="css/misc.css">
+<link rel="stylesheet" href="css/features.css">
+<link rel="stylesheet" href="css/roles.css">
+<link rel="stylesheet" href="css/print.css" media="print">
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<!-- ============ SETUP SCREEN ============ -->
+<div id="setupScreen" class="setup-wrap hidden">
+  <div class="setup-card">
+    <div class="setup-mark">MT</div>
+    <h2>Hubungkan ke Supabase</h2>
+    <p>Masukkan Project URL dan anon public key dari Supabase Dashboard &gt; Settings &gt; API. Data ini disimpan hanya di browser kamu.</p>
+    <div class="field"><label>Supabase Project URL</label><input id="setupUrl" placeholder="https://xxxxx.supabase.co"></div>
+    <div class="field"><label>Supabase Anon Public Key</label><input id="setupKey" placeholder="eyJhbGciOi..."></div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="saveSetup()">Simpan &amp; Lanjutkan</button>
+    <p class="footnote">Belum punya project Supabase? Lihat panduan koneksi di README.md yang disertakan dalam paket ini.</p>
+  </div>
+</div>
+
+<!-- ============ ROLE SCREEN ============ -->
+<div id="roleScreen" class="setup-wrap hidden">
+  <div class="setup-card" style="max-width:520px;">
+    <div class="setup-mark">MT</div>
+    <h2>Pilih Peran Anda</h2>
+    <p>Setiap peran hanya melihat halaman kerja masing-masing (input &amp; riwayat sendiri). Semua data tetap tersimpan bersama di satu database Supabase — Admin bisa melihat dan mengoreksi semuanya.</p>
+    <div class="role-grid" id="roleGrid"></div>
+    <div id="adminPinBlock" class="hidden" style="margin-top:18px;">
+      <div class="field"><label id="adminPinLabel">Masukkan PIN Admin</label><input type="password" id="adminPinInput" inputmode="numeric" placeholder="••••"></div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="submitAdminPin()">Masuk sebagai Admin</button>
+      <button class="btn btn-ghost" style="width:100%;justify-content:center;margin-top:8px;" onclick="cancelAdminPin()">Batal</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="app" class="hidden">
+  <header class="appbar">
+    <div class="brand">
+      <div class="mark">MT</div>
+      <div>
+        <h1>Material Tracking</h1>
+        <div class="sub">Data Order &amp; Status</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <span class="role-chip" id="roleChip"></span>
+      <button class="icon-btn" title="Ganti Peran" onclick="switchRole()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+      </button>
+      <button class="icon-btn hidden" id="exportGlobalBtn" title="Ekspor Excel (Laporan Lengkap)" onclick="exportExcel()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      </button>
+      <button class="icon-btn" title="Pengaturan Supabase" onclick="openSettings()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <nav class="tabbar">
+    <button class="tab-btn active" data-tab="dashboard" onclick="switchTab('dashboard')">Dashboard</button>
+    <button class="tab-btn" data-tab="pi" onclick="switchTab('pi')">Data PI</button>
+    <button class="tab-btn" data-tab="gudang" onclick="switchTab('gudang')">Gudang</button>
+    <button class="tab-btn" data-tab="qc" onclick="switchTab('qc')">QC</button>
+    <button class="tab-btn" data-tab="diecut" onclick="switchTab('diecut')">Diecut</button>
+    <button class="tab-btn" data-tab="suplai" onclick="switchTab('suplai')">Suplai</button>
+    <button class="tab-btn" data-tab="produksi" onclick="switchTab('produksi')">Produksi</button>
+    <button class="tab-btn" data-tab="laporan" onclick="switchTab('laporan')">Laporan</button>
+  </nav>
+
+  <main class="wrap">
+
+    <!-- DASHBOARD -->
+    <section id="tab-dashboard">
+      <div class="stat-grid">
+        <div class="stat-card accent-steel"><div class="num mono" id="statItems">0</div><div class="label">Jenis Barang</div></div>
+        <div class="stat-card accent-amber"><div class="num mono" id="statPendingQc">0</div><div class="label">Belum Diperiksa QC</div></div>
+        <div class="stat-card accent-green"><div class="num mono" id="statGoodQty">0</div><div class="label">Total Good (Qty)</div></div>
+        <div class="stat-card accent-violet"><div class="num mono" id="statProdQty">0</div><div class="label">Total Terkirim ke Produksi</div></div>
+      </div>
+      <div id="attentionWrap" class="hidden" style="margin-bottom:22px;">
+        <h3 class="section-label">⚠ Perlu Perhatian <span class="section-label-note">(macet ≥ 3 hari tanpa progres)</span></h3>
+        <div id="attentionList"></div>
+      </div>
+
+      <h3 class="section-label">Aktivitas Terbaru</h3>
+      <div id="recentList"></div>
+    </section>
+
+    <!-- DATA PI (khusus Admin) -->
+    <section id="tab-pi" class="hidden">
+      <div class="tab-header">
+        <p class="eyebrow">Admin · Input &amp; Kontrol</p>
+        <h2>Data PI</h2>
+        <p>Buat jenis barang baru per PI di sini. Divisi lain (Gudang/QC/Diecut/Suplai/Produksi) hanya mencatat transaksi terhadap PI yang sudah dibuat — tidak bisa membuat atau mengedit Data PI.</p>
+      </div>
+      <div class="toolbar">
+        <div class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="searchPi" placeholder="Cari PI Spec / PI No..." oninput="renderPiAdmin()">
+        </div>
+        <button class="btn btn-primary" onclick="openItemModal()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Tambah PI
+        </button>
+      </div>
+      <p class="section-label" id="piAdminCount" style="margin-bottom:10px;"></p>
+      <div class="report-scroll">
+        <table class="report">
+          <thead>
+            <tr class="cols">
+              <th>PI Date</th><th>PI No</th><th>Brand</th><th>PI Specification</th><th>PI Qty</th><th>Diterima Gudang</th><th>Aksi</th>
+            </tr>
+          </thead>
+          <tbody id="piAdminBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- GUDANG -->
+    <section id="tab-gudang" class="hidden">
+      <div class="tab-header">
+        <p class="eyebrow">Tahap 1 · Divisi Gudang</p>
+        <h2>Gudang — Terima Barang Masuk</h2>
+        <p>Catat tiap kali barang datang dari supplier terhadap PI yang sudah dibuat Admin (bisa parsial / bertahap).</p>
+        <span class="badge badge-grey" id="miniStat_gudang"></span>
+      </div>
+      <div class="toolbar">
+        <div class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="searchGudang" placeholder="Cari PI Spec / PI No..." oninput="renderStage('gudang')">
+        </div>
+        <select id="sortGudang" class="btn btn-ghost" onchange="renderStage('gudang')" style="min-width:170px;">
+          <option value="default">Urutan Default</option>
+          <option value="pi_terbaru">PI Terbaru</option>
+          <option value="pi_terlama">PI Terlama</option>
+          <option value="qty_terbanyak">Qty Diterima Terbanyak</option>
+        </select>
+      </div>
+      <div id="listGudang"></div>
+
+      <div class="log-toggle-row">
+        <button class="btn btn-ghost btn-sm" onclick="toggleStageLog('gudang')">📜 Log Riwayat Gudang</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportStageLog('gudang')">⭳ Ekspor Riwayat Gudang</button>
+      </div>
+      <div class="log-wrap hidden" id="logWrap_gudang">
+        <div class="report-scroll">
+          <table class="report">
+            <thead><tr class="cols" id="logHead_gudang"></tr></thead>
+            <tbody id="logBody_gudang"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- QC -->
+    <section id="tab-qc" class="hidden">
+      <div class="tab-header">
+        <p class="eyebrow">Tahap 2 &amp; 4 · Divisi Quality Control</p>
+        <h2>Quality Control — In Coming QC</h2>
+        <p>Terima barang dari Gudang, periksa (QC Awal). Barang Sheet dioper ke Diecut, barang Pcs langsung ke Suplai Material. Barang yang kembali dari Diecut diperiksa lagi di sini sebagai QC Ulang.</p>
+        <span class="badge badge-grey" id="miniStat_qc"></span>
+      </div>
+      <div class="toolbar">
+        <div class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="searchQc" placeholder="Cari PI Spec / PI No..." oninput="renderStage('qc')">
+        </div>
+        <select id="filterQc" class="btn btn-ghost" onchange="renderStage('qc')" style="min-width:170px;">
+          <option value="belum">Masih Ada Sisa Diperiksa</option>
+          <option value="semua">Semua Barang</option>
+        </select>
+        <select id="sortQc" class="btn btn-ghost" onchange="renderStage('qc')" style="min-width:170px;">
+          <option value="default">Urutan Default</option>
+          <option value="pi_terbaru">PI Terbaru</option>
+          <option value="pi_terlama">PI Terlama</option>
+          <option value="qty_terbanyak">Sisa Diperiksa Terbanyak</option>
+        </select>
+      </div>
+      <div id="listQc"></div>
+
+      <div class="log-toggle-row">
+        <button class="btn btn-ghost btn-sm" onclick="toggleStageLog('qc')">📜 Log Riwayat QC</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportStageLog('qc')">⭳ Ekspor Riwayat QC</button>
+      </div>
+      <div class="log-wrap hidden" id="logWrap_qc">
+        <div class="report-scroll">
+          <table class="report">
+            <thead><tr class="cols" id="logHead_qc"></tr></thead>
+            <tbody id="logBody_qc"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- DIECUT (DIVISI MACHINE) -->
+    <section id="tab-diecut" class="hidden">
+      <div class="tab-header">
+        <p class="eyebrow">Tahap 3 · Divisi Diecut · Khusus Sheet</p>
+        <h2>Diecut — Divisi Machine</h2>
+        <p>Menampilkan barang yang punya batch QC Awal bertanda <b>Sheet</b> dan masih ada sisa belum dipotong. Catat tiap kali barang dipotong di mesin dan dikirim balik ke QC untuk QC Ulang (bisa bertahap).</p>
+        <span class="badge badge-grey" id="miniStat_diecut"></span>
+      </div>
+      <div class="toolbar">
+        <div class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="searchDiecut" placeholder="Cari PI Spec / PI No..." oninput="renderStage('diecut')">
+        </div>
+        <select id="filterDiecut" class="btn btn-ghost" onchange="renderStage('diecut')" style="min-width:170px;">
+          <option value="belum">Masih Ada Sisa dari QC</option>
+          <option value="semua">Semua Barang Sheet</option>
+        </select>
+        <select id="sortDiecut" class="btn btn-ghost" onchange="renderStage('diecut')" style="min-width:170px;">
+          <option value="default">Urutan Default</option>
+          <option value="pi_terbaru">PI Terbaru</option>
+          <option value="pi_terlama">PI Terlama</option>
+          <option value="qty_terbanyak">Sisa Potong Terbanyak</option>
+        </select>
+      </div>
+      <div id="listDiecut"></div>
+
+      <div class="log-toggle-row">
+        <button class="btn btn-ghost btn-sm" onclick="toggleStageLog('diecut')">📜 Log Riwayat Diecut</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportStageLog('diecut')">⭳ Ekspor Riwayat Diecut</button>
+      </div>
+      <div class="log-wrap hidden" id="logWrap_diecut">
+        <div class="report-scroll">
+          <table class="report">
+            <thead><tr class="cols" id="logHead_diecut"></tr></thead>
+            <tbody id="logBody_diecut"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- SUPLAI -->
+    <section id="tab-suplai" class="hidden">
+      <div class="tab-header">
+        <p class="eyebrow">Tahap 5 · Divisi Suplai Material</p>
+        <h2>Suplai Material</h2>
+        <p>Terima barang yang sudah lolos QC (dari QC untuk barang Pcs, atau dari Diecut/QC Ulang untuk barang Sheet), lalu oper ke Produksi.</p>
+        <span class="badge badge-grey" id="miniStat_suplai"></span>
+      </div>
+      <div class="toolbar">
+        <div class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="searchSuplai" placeholder="Cari PI Spec / PI No..." oninput="renderStage('suplai')">
+        </div>
+        <select id="filterSuplai" class="btn btn-ghost" onchange="renderStage('suplai')" style="min-width:170px;">
+          <option value="belum">Masih Ada Sisa dari QC</option>
+          <option value="semua">Semua Barang</option>
+        </select>
+        <select id="sortSuplai" class="btn btn-ghost" onchange="renderStage('suplai')" style="min-width:170px;">
+          <option value="default">Urutan Default</option>
+          <option value="pi_terbaru">PI Terbaru</option>
+          <option value="pi_terlama">PI Terlama</option>
+          <option value="qty_terbanyak">Sisa Terima Terbanyak</option>
+        </select>
+      </div>
+      <div id="listSuplai"></div>
+
+      <div class="log-toggle-row">
+        <button class="btn btn-ghost btn-sm" onclick="toggleStageLog('suplai')">📜 Log Riwayat Suplai</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportStageLog('suplai')">⭳ Ekspor Riwayat Suplai</button>
+      </div>
+      <div class="log-wrap hidden" id="logWrap_suplai">
+        <div class="report-scroll">
+          <table class="report">
+            <thead><tr class="cols" id="logHead_suplai"></tr></thead>
+            <tbody id="logBody_suplai"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- PRODUKSI -->
+    <section id="tab-produksi" class="hidden">
+      <div class="tab-header">
+        <p class="eyebrow">Tahap 6 · Divisi Produksi</p>
+        <h2>Kirim ke Produksi</h2>
+        <p>Konfirmasi tiap kali Produksi menerima kiriman barang dari Suplai Material (bisa bertahap).</p>
+        <span class="badge badge-grey" id="miniStat_produksi"></span>
+      </div>
+      <div class="toolbar">
+        <div class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="searchProduksi" placeholder="Cari PI Spec / PI No..." oninput="renderStage('produksi')">
+        </div>
+        <select id="filterProduksi" class="btn btn-ghost" onchange="renderStage('produksi')" style="min-width:170px;">
+          <option value="belum">Masih Ada Sisa di Suplai</option>
+          <option value="semua">Semua Barang</option>
+        </select>
+        <select id="sortProduksi" class="btn btn-ghost" onchange="renderStage('produksi')" style="min-width:170px;">
+          <option value="default">Urutan Default</option>
+          <option value="pi_terbaru">PI Terbaru</option>
+          <option value="pi_terlama">PI Terlama</option>
+          <option value="qty_terbanyak">Sisa Kirim Terbanyak</option>
+        </select>
+      </div>
+      <div id="listProduksi"></div>
+
+      <div class="log-toggle-row">
+        <button class="btn btn-ghost btn-sm" onclick="toggleStageLog('produksi')">📜 Log Riwayat Produksi</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportStageLog('produksi')">⭳ Ekspor Riwayat Produksi</button>
+      </div>
+      <div class="log-wrap hidden" id="logWrap_produksi">
+        <div class="report-scroll">
+          <table class="report">
+            <thead><tr class="cols" id="logHead_produksi"></tr></thead>
+            <tbody id="logBody_produksi"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- LAPORAN -->
+    <section id="tab-laporan" class="hidden">
+      <div class="tab-header">
+        <p class="eyebrow">Ringkasan</p>
+        <h2>Laporan — Data Order and Status</h2>
+        <p>Ringkasan per jenis barang (total dari semua transaksi bertahap di tiap tahap).</p>
+      </div>
+      <div class="toolbar">
+        <div class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="searchLaporan" placeholder="Cari PI Spec / PI No..." oninput="renderLaporan()">
+        </div>
+        <button class="btn btn-ghost" onclick="printReport()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          Cetak / PDF
+        </button>
+        <button class="btn btn-ghost" onclick="exportExcel()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Ekspor Excel
+        </button>
+      </div>
+      <div class="report-scroll">
+        <table class="report">
+          <thead>
+            <tr class="grp">
+              <th colspan="11">Wharehouse — PI Data</th>
+              <th colspan="5">QC Awal</th>
+              <th colspan="4">Diecut — Divisi Machine</th>
+              <th colspan="4">QC Ulang (Setelah Diecut)</th>
+              <th colspan="3">Suplay Material</th>
+              <th colspan="3">Produksi</th>
+            </tr>
+            <tr class="cols">
+              <th class="col-warehouse">PI Date</th><th>PI No</th><th>Brand</th><th>PI Specification</th><th>Description</th><th>PI Qty</th><th>Unit</th><th>Tgl Diterima Gudang</th><th>Qty In (Total)</th><th>Supplier</th><th>Status</th>
+              <th class="col-qc">Tgl QC Awal</th><th>Good — Sheet (perlu Diecut)</th><th>Good — Pcs (langsung Suplai)</th><th>N.G Awal (Total)</th><th>Status QC Awal</th>
+              <th class="col-diecut">Tgl Diecut</th><th>Qty Masuk Diecut</th><th>Qty Keluar Diecut</th><th>Status Diecut</th>
+              <th class="col-qc2">Tgl QC Ulang</th><th>Good Ulang (Total)</th><th>N.G Ulang (Total)</th><th>Status QC Ulang</th>
+              <th class="col-supply">Tgl Masuk Suplai</th><th>Diterima Suplai (Total)</th><th>Status Suplai Terakhir</th>
+              <th class="col-prod">Tgl Masuk Produksi</th><th>Terkirim Produksi (Total)</th><th>Status Produksi Terakhir</th>
+            </tr>
+          </thead>
+          <tbody id="reportBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<button class="fab hidden" id="fabAdd" onclick="openItemModal()" title="Tambah PI baru">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+</button>
+
+<!-- ============ ITEM MODAL (create/edit master barang) ============ -->
+<div class="modal-backdrop" id="itemModal">
+  <div class="modal">
+    <div class="modal-head" style="background:var(--steel);">
+      <div><div class="eyebrow">Gudang</div><h2 id="itemModalTitle">Tambah PI Baru</h2></div>
+      <button class="icon-btn" onclick="closeItemModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="i_id">
+      <div class="section-title-plain">Data PI</div>
+      <div class="field-grid">
+        <div class="field"><label>PI No</label><input id="i_pi_no"></div>
+        <div class="field"><label>PI Date</label><input type="date" id="i_pi_date"></div>
+      </div>
+      <div class="field"><label>Brand</label><input id="i_brand"></div>
+
+      <div class="section-title-plain" id="itemRowsLabel" style="margin-top:18px;">Jenis Barang dalam PI Ini</div>
+      <p id="itemRowsHint" class="hint-text">Satu PI bisa berisi beberapa jenis barang — tambah barisnya satu per satu.</p>
+      <div id="itemRowsContainer"></div>
+      <button class="btn btn-ghost btn-sm" id="addRowBtn" onclick="addItemRow()" type="button">+ Tambah Jenis Barang</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-danger hidden" id="itemDeleteBtn" onclick="deleteItem()">Hapus</button>
+      <button class="btn btn-ghost hidden" id="itemDuplicateBtn" onclick="duplicateItem()" title="Salin data ini ke PI baru">Duplikat</button>
+      <button class="btn btn-ghost" onclick="closeItemModal()">Batal</button>
+      <button class="btn btn-primary" onclick="saveItem()">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ TIMELINE MODAL (riwayat lengkap lintas tahap) ============ -->
+<div class="modal-backdrop" id="timelineModal">
+  <div class="modal">
+    <div class="modal-head" style="background:var(--graphite);">
+      <div><div class="eyebrow">Riwayat Lengkap</div><h2 id="timelineTitle">Barang</h2><div class="eyebrow" id="timelineSub" style="margin-top:2px;"></div></div>
+      <button class="icon-btn" onclick="closeTimelineModal()">✕</button>
+    </div>
+    <div class="modal-body" id="timelineBody"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" style="flex:1;justify-content:center;" onclick="closeTimelineModal()">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ENTRY MODAL (transaksi parsial per tahap) ============ -->
+<div class="modal-backdrop" id="entryModal">
+  <div class="modal">
+    <div class="modal-head" id="entryModalHead">
+      <div><div class="eyebrow" id="entryEyebrow">Gudang</div><h2 id="entryModalTitle">Catat Transaksi</h2></div>
+      <button class="icon-btn" onclick="closeEntryModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="e_id">
+      <input type="hidden" id="e_item_id">
+      <input type="hidden" id="e_stage">
+      <div id="entryRefBlock" class="readonly-block"></div>
+
+      <div id="eblock-gudang" class="hidden">
+        <div class="field"><label>Supplier</label><input id="e_supplier" list="supplierOptions" placeholder="Pilih dari daftar atau ketik nama baru" autocomplete="off"></div>
+        <div class="field-grid">
+          <div class="field"><label>SJ/DO No</label><input id="e_sj_do_no"></div>
+          <div class="field"><label>SJ/DO Date</label><input type="date" id="e_sj_do_date"></div>
+          <div class="field"><label>Qty Barang Masuk (SJ DO Qty)</label><input type="number" id="e_sj_do_qty"></div>
+          <div class="field"><label>SJ/DO Unit (Bentuk Barang)</label>
+            <select id="e_sj_do_unit">
+              <option value="Pcs">Pcs</option>
+              <option value="Sheet">Sheet (perlu Diecut)</option>
+              <option value="Pack">Pack</option>
+            </select>
+          </div>
+          <div class="field"><label>Delivery Date to QC</label><input type="date" id="e_delivery_date_to_qc"></div>
+          <div class="field"><label>Status Material</label>
+            <input id="e_status_material" placeholder="tulis status, mis: Terkirim ke QC">
+          </div>
+        </div>
+      </div>
+
+      <div id="eblock-qc" class="hidden">
+        <div class="field">
+          <label>Asal Barang</label>
+          <select id="e_source_stage" onchange="toggleQcBentukField()">
+            <option value="Gudang">Dari Gudang (QC Awal)</option>
+            <option value="Diecut">Dari Diecut (QC Ulang, sudah jadi Pcs)</option>
+          </select>
+        </div>
+        <div class="field" id="qcBentukFieldWrap">
+          <label>Bentuk Barang yang Diperiksa</label>
+          <select id="e_bentuk_diperiksa">
+            <option value="Pcs">Pcs (langsung ke Suplai)</option>
+            <option value="Sheet">Sheet (perlu Diecut dulu)</option>
+          </select>
+        </div>
+        <div class="field-grid">
+          <div class="field"><label>Infection Date</label><input type="date" id="e_inspection_date"></div>
+          <div class="field"><label>Good Material</label><input type="number" id="e_good_material"></div>
+          <div class="field"><label>N.G Material</label><input type="number" id="e_ng_material"></div>
+          <div class="field"><label>Status</label>
+            <input id="e_qc_status" placeholder="tulis status, mis: Lulus">
+          </div>
+          <div class="field" style="grid-column:1/-1;"><label>Delivery Suplay Material</label><input type="date" id="e_delivery_supply_material"></div>
+        </div>
+      </div>
+
+      <div id="eblock-suplai" class="hidden">
+        <div class="field-grid">
+          <div class="field"><label>Suplay Date</label><input type="date" id="e_supply_date"></div>
+          <div class="field"><label>Suplay Qty</label><input type="number" id="e_supply_qty"></div>
+          <div class="field"><label>Total Material</label><input type="number" id="e_total_material"></div>
+          <div class="field"><label>Status</label>
+            <input id="e_supply_status" placeholder="tulis status, mis: Diterima">
+          </div>
+        </div>
+      </div>
+
+      <div id="eblock-diecut" class="hidden">
+        <div class="field-grid">
+          <div class="field"><label>Tanggal Diecut</label><input type="date" id="e_machine_date"></div>
+          <div class="field"><label>Status</label>
+            <input id="e_machine_status" placeholder="tulis status, mis: Selesai">
+          </div>
+          <div class="field"><label>Qty Masuk (dari QC)</label><input type="number" id="e_qty_in"></div>
+          <div class="field"><label>Qty Keluar (balik ke QC)</label><input type="number" id="e_qty_out"></div>
+        </div>
+        <div class="field"><label>Catatan</label><input id="e_diecut_notes" placeholder="Opsional"></div>
+      </div>
+
+      <div id="eblock-produksi" class="hidden">
+        <div class="field-grid">
+          <div class="field"><label>Production Date</label><input type="date" id="e_production_date"></div>
+          <div class="field"><label>Production Qty</label><input type="number" id="e_production_qty"></div>
+          <div class="field"><label>Status</label>
+            <input id="e_production_status" placeholder="tulis status, mis: Diterima Produksi">
+          </div>
+        </div>
+        <div class="field"><label>Catatan</label><input id="e_notes" placeholder="Opsional"></div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-danger hidden" id="entryDeleteBtn" onclick="deleteEntry()">Hapus</button>
+      <button class="btn btn-ghost" onclick="closeEntryModal()">Batal</button>
+      <button class="btn btn-primary" onclick="saveEntry()">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<datalist id="supplierOptions">
+  <option value="DWSM">
+  <option value="SAMUDRA">
+  <option value="SCI">
+</datalist>
+
+<div class="toast" id="toast"></div>
+
+<!-- ============ APP SCRIPTS (order matters: config/state/utils first) ============ -->
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/state.js"></script>
+<script src="js/aggregate.js"></script>
+<script src="js/roles.js"></script>
+<script src="js/connection.js"></script>
+<script src="js/tabs.js"></script>
+<script src="js/dashboard.js"></script>
+<script src="js/stage-view.js"></script>
+<script src="js/stage-log.js"></script>
+<script src="js/item-modal.js"></script>
+<script src="js/pi-admin.js"></script>
+<script src="js/entry-modal.js"></script>
+<script src="js/report.js"></script>
+<script src="js/timeline.js"></script>
+<script src="js/insights.js"></script>
+<script src="js/shortcuts.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
