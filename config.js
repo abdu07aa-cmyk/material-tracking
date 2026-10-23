@@ -1,5 +1,3 @@
-// Inisialisasi client Supabase secara global
-const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // Isi dengan data project Supabase Anda:
 // Supabase Dashboard > Project Settings > API
 //  - Project URL
