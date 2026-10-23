@@ -179,3 +179,17 @@ b,.strong{font-weight:600}
 @keyframes rot{to{transform:rotate(360deg)}}
 @media(max-width:560px){.hide-m{display:none}}
 select.role{padding:8px 10px;border:1px solid #d5dbe7;border-radius:8px;background:#fff;font-size:14px}
+
+/* ---------- Laporan Tabel (format Excel) ---------- */
+.rpt-wrap{background:#fff;border-radius:var(--r);box-shadow:var(--sh);overflow:auto;max-height:72vh}
+.rpt{border-collapse:separate;border-spacing:0;font-size:13px;width:100%;min-width:max-content}
+.rpt th,.rpt td{padding:8px 10px;text-align:center;white-space:nowrap;border-right:1px solid #cfe3bf;border-bottom:1px solid #cfe3bf}
+.rpt thead th{position:sticky;z-index:2;background:#fff;color:var(--ink);font-weight:800;font-size:11.5px;line-height:1.25;white-space:normal;border-right:1px solid #0f172a;border-bottom:2px solid #0f172a;min-width:70px}
+.rpt thead tr:nth-child(1) th{top:0;height:38px;font-size:12.5px;letter-spacing:.04em;color:#fff;white-space:nowrap}
+.rpt thead tr:nth-child(2) th{top:38px}
+.rpt .g-g{background:var(--c-g)}.rpt .g-q{background:var(--c-q)}.rpt .g-s{background:#d97706}.rpt .g-f{background:var(--c-f)}
+.rpt tbody tr:nth-child(even) td{background:#eef6e6}
+.rpt tbody tr.first td{border-top:2px solid #94b87a}
+.rpt td{font-variant-numeric:tabular-nums}
+.rpt td.l{text-align:left}
+.rpt td.dim{color:#94a3b8}
