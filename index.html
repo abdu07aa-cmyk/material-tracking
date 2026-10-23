@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - Gudang App</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Library Supabase -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body class="bg-gray-100 font-sans flex items-center justify-center h-screen px-4">
@@ -28,10 +27,13 @@
         <p id="login-error" class="text-red-500 text-sm mt-3 hidden text-center">Email/Password salah!</p>
     </div>
 
-    <!-- Panggil JS -->
+    <!-- 1. Panggil Config (API) -->
+    <script src="config.js"></script>
+    <!-- 2. Panggil Logika Aplikasi -->
     <script src="app.js"></script>
+    
+    <!-- 3. Script Khusus Halaman Login -->
     <script>
-        // Logika khusus halaman Login
         document.getElementById('login-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const btn = document.getElementById('btn-login');
@@ -48,7 +50,6 @@
                 btn.innerText = "Masuk";
                 btn.disabled = false;
             } else {
-                // Jika sukses, pindah ke halaman dashboard
                 window.location.href = 'dashboard.html';
             }
         });
