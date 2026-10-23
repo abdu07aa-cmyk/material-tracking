@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gudang App - Enterprise</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Library Supabase -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
         tailwind.config = {
@@ -17,22 +16,18 @@
         }
     </script>
     <style>
-        /* Custom Scrollbar agar lebih rapi */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-        
-        /* Animasi Toast */
         @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         .toast-animate { animation: slideIn 0.3s ease-out forwards; }
     </style>
 </head>
 <body class="bg-slate-50 font-sans text-slate-800 h-screen flex flex-col md:flex-row overflow-hidden">
 
-    <!-- SIDEBAR (Desktop) & BOTTOM NAV (Mobile) -->
+    <!-- SIDEBAR -->
     <aside class="w-full md:w-64 bg-brand text-white flex flex-col justify-between shrink-0 shadow-xl z-20">
-        <!-- Logo / Header -->
         <div class="p-6 hidden md:block border-b border-slate-700">
             <h1 class="text-2xl font-bold tracking-wider text-white flex items-center gap-2">
                 <svg class="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
@@ -40,30 +35,27 @@
             </h1>
         </div>
 
-        <!-- Menu Navigasi -->
         <nav class="flex flex-row md:flex-col overflow-x-auto md:overflow-visible p-2 md:p-4 gap-2 justify-around md:justify-start w-full">
-            <button class="nav-btn flex flex-col md:flex-row items-center gap-2 md:gap-3 p-3 rounded-lg transition-colors hover:bg-slate-700 active-nav" onclick="showForm('incoming', event)">
+            <button class="nav-btn flex flex-col md:flex-row items-center gap-2 md:gap-3 p-3 rounded-lg transition-colors hover:bg-slate-700 active-nav bg-slate-700 text-white" onclick="showForm('incoming', event)">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg>
                 <span class="text-xs md:text-sm font-medium">Gudang</span>
             </button>
-            <button class="nav-btn flex flex-col md:flex-row items-center gap-2 md:gap-3 p-3 rounded-lg transition-colors hover:bg-slate-700" onclick="showForm('qc', event)">
+            <button class="nav-btn flex flex-col md:flex-row items-center gap-2 md:gap-3 p-3 rounded-lg transition-colors hover:bg-slate-700 text-slate-300" onclick="showForm('qc', event)">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                 <span class="text-xs md:text-sm font-medium">QC</span>
             </button>
-            <button class="nav-btn flex flex-col md:flex-row items-center gap-2 md:gap-3 p-3 rounded-lg transition-colors hover:bg-slate-700" onclick="showForm('supply', event)">
+            <button class="nav-btn flex flex-col md:flex-row items-center gap-2 md:gap-3 p-3 rounded-lg transition-colors hover:bg-slate-700 text-slate-300" onclick="showForm('supply', event)">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
                 <span class="text-xs md:text-sm font-medium">Supply</span>
             </button>
-            <button class="nav-btn flex flex-col md:flex-row items-center gap-2 md:gap-3 p-3 rounded-lg transition-colors hover:bg-slate-700" onclick="showForm('finish', event)">
+            <button class="nav-btn flex flex-col md:flex-row items-center gap-2 md:gap-3 p-3 rounded-lg transition-colors hover:bg-slate-700 text-slate-300" onclick="showForm('finish', event)">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
                 <span class="text-xs md:text-sm font-medium">Finish</span>
             </button>
         </nav>
 
-        <!-- Tombol Logout -->
         <div class="p-4 hidden md:block border-t border-slate-700">
             <button id="logout-btn" class="w-full flex items-center justify-center gap-2 bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white px-4 py-2 rounded-lg transition-all text-sm font-medium">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
                 Logout
             </button>
         </div>
@@ -71,17 +63,15 @@
 
     <!-- KONTEN UTAMA -->
     <main class="flex-1 flex flex-col h-full overflow-hidden relative">
-        <!-- Topbar (Mobile) -->
         <header class="md:hidden bg-white p-4 flex justify-between items-center shadow-sm z-10">
             <h1 class="font-bold text-lg text-brand">WMS App</h1>
             <button id="logout-btn-mobile" class="text-red-500 font-medium text-sm">Logout</button>
         </header>
 
-        <!-- Area Kerja (Form & Tabel) -->
         <div class="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 pb-24 md:pb-8">
             
             <!-- Form Container -->
-            <div id="form-container" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8 transition-all duration-300">
+            <div id="form-container" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8">
                 <!-- Diisi oleh JS -->
             </div>
             
@@ -89,8 +79,7 @@
             <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                 <div class="p-4 md:p-6 border-b border-slate-200 bg-slate-50/50 flex justify-between items-center">
                     <h2 class="font-bold text-lg text-slate-800" id="table-title">Daftar Data</h2>
-                    <button onclick="refreshData()" class="text-sm text-accent hover:text-blue-700 font-medium flex items-center gap-1">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    <button onclick="loadData()" class="text-sm text-accent hover:text-blue-700 font-medium flex items-center gap-1">
                         Refresh
                     </button>
                 </div>
@@ -101,21 +90,17 @@
         </div>
     </main>
 
-    <!-- TOAST NOTIFICATION CONTAINER -->
     <div id="toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
-    <!-- Panggil JS -->
     <script src="config.js"></script>
     <script src="app.js"></script>
 
     <script>
-        // Proteksi Halaman
         supabaseClient.auth.getSession().then(({ data: { session } }) => {
             if (!session) window.location.href = 'index.html';
             else showForm('incoming', null); 
         });
 
-        // Logout (Desktop & Mobile)
         const handleLogout = async () => {
             await supabaseClient.auth.signOut();
             window.location.href = 'index.html';
