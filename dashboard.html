@@ -5,18 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Gudang App</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Library Supabase -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body class="bg-gray-100 font-sans">
 
-    <!-- Navbar -->
     <nav class="bg-blue-600 text-white p-4 flex justify-between items-center sticky top-0 z-10 shadow-md">
         <h1 class="font-bold text-lg">Gudang App</h1>
         <button id="logout-btn" class="bg-red-500 px-4 py-1.5 rounded text-sm hover:bg-red-600 transition">Logout</button>
     </nav>
 
-    <!-- Menu Navigasi -->
     <div class="p-4 flex gap-2 overflow-x-auto whitespace-nowrap bg-white shadow-sm mb-4">
         <button class="role-btn bg-blue-100 text-blue-700 px-4 py-2 rounded-lg font-medium" onclick="showForm('incoming', event)">Gudang</button>
         <button class="role-btn bg-gray-100 text-gray-700 px-4 py-2 rounded-lg font-medium" onclick="showForm('qc', event)">QC</button>
@@ -24,26 +21,26 @@
         <button class="role-btn bg-gray-100 text-gray-700 px-4 py-2 rounded-lg font-medium" onclick="showForm('finish', event)">Finish Good</button>
     </div>
 
-    <!-- Wadah Form -->
     <div class="px-4 pb-10">
-        <div id="form-container" class="bg-white rounded-lg shadow-md p-4">
-            <!-- Form akan muncul di sini -->
-        </div>
+        <div id="form-container" class="bg-white rounded-lg shadow-md p-4"></div>
     </div>
 
-    <!-- Panggil JS -->
+    <!-- 1. Panggil Config (API) -->
+    <script src="config.js"></script>
+    <!-- 2. Panggil Logika Aplikasi -->
     <script src="app.js"></script>
+
+    <!-- 3. Script Khusus Halaman Dashboard -->
     <script>
-        // Cek apakah user sudah login. Jika belum, tendang ke halaman login
+        // Proteksi Halaman: Cek apakah user sudah login
         supabaseClient.auth.getSession().then(({ data: { session } }) => {
             if (!session) {
                 window.location.href = 'index.html';
             } else {
-                showForm('incoming', null); // Tampilkan form default gudang
+                showForm('incoming', null); 
             }
         });
 
-        // Logika Logout
         document.getElementById('logout-btn').addEventListener('click', async () => {
             await supabaseClient.auth.signOut();
             window.location.href = 'index.html';
