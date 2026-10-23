@@ -176,11 +176,18 @@ function openForm(o) {
 
 /* ---------- Data helpers ---------- */
 async function q(table, orders = [['created_at', false]]) {
-  let r = sb.from(table).select('*');
-  orders.forEach(([c, asc]) => (r = r.order(c, { ascending: asc })));
-  const { data, error } = await r;
-  if (error) throw error;
-  return data || [];
+  // Ambil per 1000 baris sampai habis (batas default Supabase 1000 baris/permintaan)
+  const out = [];
+  for (let from = 0; ; from += 1000) {
+    let r = sb.from(table).select('*');
+    orders.forEach(([c, asc]) => (r = r.order(c, { ascending: asc })));
+    r = r.order('id', { ascending: true });
+    const { data, error } = await r.range(from, from + 999);
+    if (error) throw error;
+    out.push(...(data || []));
+    if (!data || data.length < 1000) break;
+  }
+  return out;
 }
 async function save(table, payload, id) {
   const r = id ? sb.from(table).update(payload).eq('id', id) : sb.from(table).insert(payload);
@@ -216,15 +223,80 @@ function table(cols, rows, acts) {
   }</tbody></table></div>`;
 }
 
-function exportCSV(seg, rows, name) {
-  const cols = seg.cols.filter(c => c.k);
-  const line = a => a.map(x => `"${String(x ?? '').replace(/"/g, '""')}"`).join(',');
-  const csv = '\ufeff' + [line(cols.map(c => c.label)), ...rows.map(r => line(cols.map(c => r[c.k])))].join('\r\n');
+/* ---------- Export Excel (.xlsx) memakai ExcelJS, dimuat saat dibutuhkan ---------- */
+let _xl = null;
+function loadExcelJS() {
+  if (window.ExcelJS) return Promise.resolve();
+  if (_xl) return _xl;
+  _xl = new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
+    s.onload = res;
+    s.onerror = () => { _xl = null; rej(new Error('Gagal memuat modul Excel. Periksa koneksi internet lalu coba lagi.')); };
+    document.head.appendChild(s);
+  });
+  return _xl;
+}
+async function saveWorkbook(wb, filename) {
+  const buf = await wb.xlsx.writeBuffer();
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-  a.download = `${name}-${today()}.csv`;
-  a.click();
-  URL.revokeObjectURL(a.href);
+  a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+}
+// tanggal 'YYYY-MM-DD' -> Date UTC supaya tidak bergeser sehari di Excel
+const xlDate = s => { if (!s) return null; const [y, m, d] = String(s).split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)); };
+const xlNum = v => (v == null || v === '' ? null : Number(v));
+const GREEN = 'FF70AD47', BAND = 'FFE2EFDA';
+const bThin = { style: 'thin', color: { argb: GREEN } };
+const bBlack = { style: 'medium', color: { argb: 'FF000000' } };
+const allB = b => ({ top: b, left: b, bottom: b, right: b });
+
+function xlTitle(ws, text, n) {
+  ws.mergeCells(1, 1, 1, n);
+  const t = ws.getCell(1, 1);
+  t.value = text; t.font = { bold: true, size: 15 }; t.alignment = { vertical: 'middle', horizontal: 'left' };
+  ws.getRow(1).height = 26;
+  ws.mergeCells(2, 1, 2, n);
+  const s = ws.getCell(2, 1);
+  s.value = 'Dicetak: ' + new Date().toLocaleString('id-ID') + (state.profile ? ' \u00b7 oleh ' + (state.profile.full_name || state.user.email) : '');
+  s.font = { size: 10, color: { argb: 'FF64748B' } };
+}
+function xlDataCell(cell, c, v, band) {
+  if (c.t === 'd') { cell.value = xlDate(v); cell.numFmt = 'dd-mmm-yyyy'; }
+  else if (c.t === 'n' || c.t === 'b') {
+    const n = xlNum(v); cell.value = n;
+    if (n != null) cell.numFmt = Number.isInteger(n) ? '#,##0' : '#,##0.00';
+    if (c.t === 'b' && n != null && n < 0) cell.font = { bold: true, color: { argb: 'FFC00000' } };
+  } else cell.value = v == null || v === '' ? null : String(v);
+  cell.alignment = { vertical: 'middle', horizontal: c.t === 'n' || c.t === 'b' ? 'right' : (c.al || 'center'), wrapText: true };
+  cell.border = allB(bThin);
+  if (band) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BAND } };
+}
+
+// Export tabel biasa (dipakai di halaman Gudang, QC, Supply, Finish Good)
+async function exportXLSX(title, cols, rows, name) {
+  await loadExcelJS();
+  const wb = new ExcelJS.Workbook(); wb.creator = 'MaterialFlow';
+  const ws = wb.addWorksheet('Data', { views: [{ state: 'frozen', ySplit: 4 }] });
+  const cc = cols.filter(c => c.k);
+  ws.columns = cc.map(c => ({ width: c.w || (c.t === 'd' ? 15 : c.t === 'n' || c.t === 'b' ? 14 : 22) }));
+  xlTitle(ws, title.toUpperCase(), cc.length);
+  const hr = ws.getRow(4);
+  cc.forEach((c, i) => {
+    const cell = hr.getCell(i + 1);
+    cell.value = c.label.toUpperCase(); cell.font = { bold: true };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }; cell.border = allB(bBlack);
+  });
+  hr.height = 32;
+  rows.forEach((r, i) => {
+    const row = ws.getRow(5 + i);
+    cc.forEach((c, j) => xlDataCell(row.getCell(j + 1), { ...c, al: 'left' }, r[c.k], i % 2 === 0));
+  });
+  ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4, column: cc.length } };
+  ws.pageSetup = { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
+  await saveWorkbook(wb, `${name}-${today()}.xlsx`);
 }
 
 /* standar aksi baris: Ubah (leader tahap itu) + Hapus (admin) */
@@ -595,7 +667,7 @@ async function renderSegPage(view, def) {
         : (seg.add ? '<span class="pill gray">Mode lihat saja</span>' : '')}</div>
     <div class="seg" id="segs">${def.segments.map(s => `<button data-seg="${s.id}" class="${s.id === seg.id ? 'on' : ''}">${esc(s.label)}</button>`).join('')}</div>
     <div class="toolbar"><div class="search">${icon('search', 18)}<input id="q" type="search" placeholder="Cari PI, brand, SJ…"></div>
-      <button class="btn ghost" id="csv" title="Unduh CSV">${icon('download', 18)}<span class="hide-m">CSV</span></button></div>
+      <button class="btn ghost" id="xls" title="Export ke Excel">${icon('download', 18)}<span class="hide-m">Excel</span></button></div>
     <div class="cnt" id="cnt"></div>
     <div id="list"><div class="loading"><span class="spin"></span>Memuat data…</div></div>`;
   $('#segs').onclick = e => { const b = e.target.closest('[data-seg]'); if (b) { state.seg[def.id] = b.dataset.seg; reload(); } };
@@ -603,10 +675,11 @@ async function renderSegPage(view, def) {
 
   let rows = [];
   try { rows = await seg.load(); } catch (e) { $('#list').innerHTML = `<div class="errbox">${esc(errMsg(e))}</div>`; return; }
-  let acts = [];
+  let acts = [], shown = rows;
   const draw = () => {
     const k = $('#q').value.trim().toLowerCase();
     const f = k ? rows.filter(r => Object.values(r).join(' ').toLowerCase().includes(k)) : rows;
+    shown = f;
     acts = f.map(r => (seg.acts ? seg.acts(r) : []));
     $('#list').innerHTML = table(seg.cols, f, acts);
     $('#cnt').textContent = f.length + ' data';
@@ -619,7 +692,12 @@ async function renderSegPage(view, def) {
     const a = acts[+b.dataset.i]?.find(x => x.key === b.dataset.k);
     if (a) a.run(reload);
   };
-  $('#csv').onclick = () => exportCSV(seg, rows, def.id + '-' + seg.id);
+  $('#xls').onclick = async e => {
+    const b = e.currentTarget; b.disabled = true;
+    try { await exportXLSX(`${def.title} - ${seg.label}`, seg.cols, shown, `${def.id}-${seg.id}`); toast('File Excel diunduh'); }
+    catch (err) { toast(errMsg(err), 'err'); }
+    b.disabled = false;
+  };
 }
 
 /* ---------- Dashboard ---------- */
@@ -636,11 +714,155 @@ function poCard(p) {
     </div></div>`;
 }
 
+/* ---------- Laporan Tabel (format Excel: 1 tabel panjang) ---------- */
+const REPORT = [
+  { g: 'INCOMING MATERIAL DATA', c: 'g', cols: [
+    { k: 'no', l: 'NO', w: 6, t: 'x' }, { k: 'pi_no', l: 'PI. NO', w: 18, t: 'x' }, { k: 'brand', l: 'BRAND', w: 22, t: 'x', al: 'left' },
+    { k: 'spec', l: 'SPESIFIKASI INCOMING MATERIAL', w: 26, t: 'x', al: 'left' }, { k: 'qty_po', l: 'QTY PO', w: 12, t: 'n' },
+    { k: 'sj_no', l: 'NO. SJ / DO. NO', w: 18, t: 'x' }, { k: 'qty_sj', l: 'QTY SJ', w: 12, t: 'n' },
+    { k: 'total_in', l: 'TOTAL INCOMING MATERIAL', w: 17, t: 'n' }, { k: 'bal_po', l: 'BALANCE', w: 12, t: 'b' }] },
+  { g: 'QC INCOMING MATERIAL', c: 'q', cols: [
+    { k: 'good', l: 'GOOD MATERIAL', w: 14, t: 'n' }, { k: 'ng', l: 'NG MATERIAL', w: 14, t: 'n' },
+    { k: 'qc_desc', l: 'DESCRIPTION', w: 28, t: 'x', al: 'left' }, { k: 'qc_bal', l: 'BALANCE', w: 12, t: 'b' }] },
+  { g: 'SUPPLY MATERIAL', c: 's', cols: [
+    { k: 'req_date', l: 'MATERIAL REQUEST DATE', w: 16, t: 'd' }, { k: 'sent', l: 'NO OF MATERIAL SENT', w: 14, t: 'n' },
+    { k: 'ret_date', l: 'MATERIAL RETURN DATE', w: 16, t: 'd' }, { k: 'ret_qty', l: 'NO OF MATERIAL RETURN', w: 15, t: 'n' },
+    { k: 'sup_bal', l: 'BALANCE', w: 12, t: 'b' }] },
+  { g: 'FINISH GOOD', c: 'f', cols: [
+    { k: 'fg_date', l: 'RECEIVED DATE', w: 15, t: 'd' }, { k: 'karton', l: 'KARTON', w: 12, t: 'n' }, { k: 'display', l: 'DISPLAY', w: 12, t: 'n' },
+    { k: 'booklet', l: 'BOOKLET / CONES', w: 14, t: 'n' }, { k: 'fg_bal', l: 'BALANCE', w: 12, t: 'b' }] }
+];
+
+async function loadReport() {
+  const [pos, recs, qcs, iss, rets, fgs] = await Promise.all([
+    q('v_po_summary', [['created_at', true]]),
+    q('v_receipts', [['receipt_date', true], ['created_at', true]]),
+    q('v_qc_inspections', [['inspect_date', true], ['created_at', true]]),
+    q('v_supply_issues', [['request_date', true], ['created_at', true]]),
+    q('v_supply_returns', [['return_date', true], ['created_at', true]]),
+    q('v_fg_receipts', [['received_date', true], ['created_at', true]])
+  ]);
+  const by = (arr, k) => arr.reduce((m, x) => { (m[x[k]] = m[x[k]] || []).push(x); return m; }, {});
+  const recBy = by(recs, 'po_item_id'), issBy = by(iss, 'po_item_id'), fgBy = by(fgs, 'po_item_id');
+  const qcBy = by(qcs, 'receipt_id'), retBy = by(rets, 'issue_id');
+  const out = [];
+  pos.forEach((p, pi) => {
+    const R = recBy[p.id] || [], I = issBy[p.id] || [], F = fgBy[p.id] || [];
+    const n = Math.max(R.length, I.length, F.length, 1);
+    let cum = 0, cumBook = 0;
+    for (let i = 0; i < n; i++) {
+      const r = R[i], s = I[i], f = F[i];
+      const row = { no: i === 0 ? pi + 1 : null, pi_no: p.pi_no, brand: p.brand, spec: p.specification,
+        qty_po: i === 0 ? p.qty_po : null, first: i === 0 };
+      if (r) {
+        cum += Number(r.qty_sj);
+        const q_ = qcBy[r.id] || [];
+        Object.assign(row, { sj_no: r.sj_no, qty_sj: r.qty_sj, total_in: cum, bal_po: Number(p.qty_po) - cum,
+          good: r.good_qty, ng: r.ng_qty, qc_desc: q_.map(x => x.description).filter(Boolean).join('; '), qc_bal: r.qc_balance });
+      } else if (i === 0) { Object.assign(row, { total_in: 0, bal_po: Number(p.qty_po) }); }
+      if (s) {
+        const rr = retBy[s.id] || [];
+        Object.assign(row, { req_date: s.request_date, sent: s.qty_sent, ret_date: rr.length ? rr[rr.length - 1].return_date : null,
+          ret_qty: s.returned_qty, sup_bal: s.balance });
+      }
+      if (f) {
+        cumBook += Number(f.booklet_cones);
+        Object.assign(row, { fg_date: f.received_date, karton: f.karton, display: f.display, booklet: f.booklet_cones,
+          fg_bal: Number(p.at_production) - cumBook });
+      }
+      out.push(row);
+    }
+  });
+  return out;
+}
+
+function reportTable(rows) {
+  if (!rows.length) return '<div class="empty"><b>Belum ada data</b>Isi PI dan penerimaan di menu Gudang terlebih dahulu.</div>';
+  const cellH = (c, v, r) => {
+    if (v == null || v === '') return '';
+    if (c.t === 'n') return num(v);
+    if (c.t === 'b') return bal(Number(v));
+    if (c.t === 'd') return dt(v);
+    return esc(v);
+  };
+  return `<div class="rpt-wrap"><table class="rpt"><thead>
+    <tr>${REPORT.map(g => `<th colspan="${g.cols.length}" class="g-${g.c}">${g.g}</th>`).join('')}</tr>
+    <tr>${REPORT.flatMap(g => g.cols).map(c => `<th>${c.l}</th>`).join('')}</tr></thead><tbody>${
+    rows.map(r => `<tr class="${r.first ? 'first' : ''}">${REPORT.flatMap(g => g.cols).map(c =>
+      `<td class="${c.al === 'left' ? 'l' : ''}${!r.first && ['pi_no', 'brand', 'spec'].includes(c.k) ? ' dim' : ''}">${cellH(c, r[c.k], r)}</td>`).join('')}</tr>`).join('')
+  }</tbody></table></div>`;
+}
+
+async function exportReportXLSX(rows) {
+  await loadExcelJS();
+  const wb = new ExcelJS.Workbook(); wb.creator = 'MaterialFlow';
+  const flat = REPORT.flatMap(g => g.cols);
+  const N = flat.length;
+  const ws = wb.addWorksheet('Laporan', { views: [{ state: 'frozen', ySplit: 4, xSplit: 3 }] });
+  ws.columns = flat.map(c => ({ width: c.w }));
+  xlTitle(ws, 'LAPORAN INCOMING MATERIAL → QC → SUPPLY → FINISH GOOD', N);
+  let col = 1;
+  REPORT.forEach(g => {
+    ws.mergeCells(3, col, 3, col + g.cols.length - 1);
+    const c = ws.getCell(3, col);
+    c.value = g.g; c.font = { bold: true, size: 12 };
+    c.alignment = { horizontal: 'center', vertical: 'middle' };
+    for (let i = 0; i < g.cols.length; i++) ws.getCell(3, col + i).border = allB(bBlack);
+    col += g.cols.length;
+  });
+  ws.getRow(3).height = 24;
+  flat.forEach((c, i) => {
+    const cell = ws.getCell(4, i + 1);
+    cell.value = c.l; cell.font = { bold: true };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cell.border = allB(bBlack);
+  });
+  ws.getRow(4).height = 46;
+  rows.forEach((r, i) => {
+    const row = ws.getRow(5 + i);
+    flat.forEach((c, j) => xlDataCell(row.getCell(j + 1), c, r[c.k], i % 2 === 0));
+  });
+  ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4, column: N } };
+  ws.pageSetup = { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: '3:4' };
+  await saveWorkbook(wb, `Laporan-Material-${today()}.xlsx`);
+}
+
+async function renderReport(body) {
+  body.innerHTML = '<div class="loading"><span class="spin"></span>Menyusun laporan…</div>';
+  let rows;
+  try { rows = await loadReport(); } catch (e) { body.innerHTML = `<div class="errbox">${esc(errMsg(e))}</div>`; return; }
+  body.innerHTML = `<div class="toolbar"><div class="search">${icon('search', 18)}<input id="rq" type="search" placeholder="Cari PI, brand, SJ…"></div>
+    <button class="btn primary" id="rx">${icon('download', 18)}<span>Export Excel</span></button></div>
+    <div class="cnt" id="rcnt"></div><div id="rtbl"></div>
+    <p class="mut" style="font-size:12px;margin-top:8px">Geser tabel ke samping untuk melihat semua kolom. Hasil pencarian ikut terexport.</p>`;
+  let cur = rows;
+  const draw = () => {
+    const k = $('#rq').value.trim().toLowerCase();
+    cur = k ? rows.filter(r => [r.pi_no, r.brand, r.spec, r.sj_no].join(' ').toLowerCase().includes(k)) : rows;
+    $('#rtbl').innerHTML = reportTable(cur);
+    $('#rcnt').textContent = cur.length + ' baris';
+  };
+  $('#rq').oninput = draw; draw();
+  $('#rx').onclick = async e => {
+    const b = e.currentTarget; b.disabled = true;
+    try { await exportReportXLSX(cur); toast('Laporan Excel diunduh'); } catch (err) { toast(errMsg(err), 'err'); }
+    b.disabled = false;
+  };
+}
+
 async function renderDashboard(view) {
+  const tab = state.seg.dashboard === 'rpt' ? 'rpt' : 'sum';
   view.innerHTML = `<div class="page-head"><div><h1>Dashboard</h1><p>Ringkasan alur material dari Gudang sampai Finish Good.</p></div>
     <button class="btn ghost" id="rf">${icon('refresh', 18)}<span>Muat ulang</span></button></div>
-    <div class="loading"><span class="spin"></span>Memuat data…</div>`;
+    <div class="seg" id="dsegs"><button data-seg="sum" class="${tab === 'sum' ? 'on' : ''}">Ringkasan</button><button data-seg="rpt" class="${tab === 'rpt' ? 'on' : ''}">Laporan Tabel</button></div>
+    <div id="dbody"></div>`;
   $('#rf').onclick = () => renderDashboard(view);
+  $('#dsegs').onclick = e => { const b = e.target.closest('[data-seg]'); if (b) { state.seg.dashboard = b.dataset.seg; renderDashboard(view); } };
+  if (tab === 'rpt') await renderReport($('#dbody')); else await renderSummary($('#dbody'));
+}
+
+async function renderSummary(view) {
+  view.innerHTML = '<div class="loading"><span class="spin"></span>Memuat data…</div>';
   let rows;
   try { rows = await q('v_po_summary'); } catch (e) { view.insertAdjacentHTML('beforeend', ''); view.querySelector('.loading').outerHTML = `<div class="errbox">${esc(errMsg(e))}</div>`; return; }
   const sum = k => rows.reduce((a, r) => a + Number(r[k] || 0), 0);
