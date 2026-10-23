@@ -9,6 +9,12 @@ Web app mobile-friendly untuk mencatat alur material. Data saling terhubung per 
 
 Semua saldo (balance) dihitung otomatis oleh database, tidak diinput manual.
 
+## Laporan & Export Excel
+- **Dashboard → tab "Laporan Tabel"**: satu tabel panjang seperti format Excel (Incoming → QC → Supply → Finish Good). Satu baris = satu Surat Jalan; pengiriman supply dan penerimaan finish good dari PI yang sama ditampilkan pada baris berikutnya.
+- Tombol **Export Excel** menghasilkan file `.xlsx` berformat (judul, header berkelompok, garis, warna selang-seling, filter, siap cetak landscape) untuk laporan atasan. Hasil pencarian ikut terexport.
+- Setiap tabel di menu Gudang, QC, Supply, dan Finish Good juga punya tombol **Excel**.
+- Modul Excel dimuat dari internet saat tombol ditekan, jadi perangkat harus online.
+
 ## File
 | File | Fungsi |
 |---|---|
