@@ -4,7 +4,7 @@
 let currentTable = 'incoming_material';
 let currentRole = 'dashboard';
 let dataGudangSementara = []; 
-let dataTabelSekarang = []; // Menyimpan data tabel untuk di-export ke Excel
+let dataTabelSekarang = []; 
 
 // ==========================================
 // 1. FUNGSI NOTIFIKASI (TOAST)
@@ -60,9 +60,8 @@ function showForm(role, event) {
         </div>
     `;
 
-    // --- TAMPILAN DASHBOARD (BARU) ---
     if (role === 'dashboard') {
-        tableWrapper.classList.add('hidden'); // Sembunyikan tabel
+        if(tableWrapper) tableWrapper.classList.add('hidden');
         container.innerHTML = `
             <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                 <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
@@ -89,9 +88,8 @@ function showForm(role, event) {
         `;
         loadDashboard();
     } 
-    // --- FORM GUDANG ---
     else if (role === 'incoming') {
-        tableWrapper.classList.remove('hidden');
+        if(tableWrapper) tableWrapper.classList.remove('hidden');
         currentTable = 'incoming_material';
         document.getElementById('table-title').innerText = 'Daftar Incoming Material';
         container.innerHTML = `
@@ -115,7 +113,7 @@ function showForm(role, event) {
         loadData();
     } 
     else {
-        tableWrapper.classList.remove('hidden');
+        if(tableWrapper) tableWrapper.classList.remove('hidden');
         if (role === 'qc') {
             currentTable = 'qc_incoming';
             document.getElementById('table-title').innerText = 'Daftar QC Incoming';
@@ -184,38 +182,36 @@ function showForm(role, event) {
 // 3. FUNGSI LOAD DASHBOARD
 // ==========================================
 async function loadDashboard() {
-    // Ambil data dari keempat tabel
     const [resIn, resQc, resSup] = await Promise.all([
         supabaseClient.from('incoming_material').select('total_incoming'),
         supabaseClient.from('qc_incoming').select('good_material, ng_material'),
         supabaseClient.from('supply_material').select('material_sent')
     ]);
 
-    // Kalkulasi
     const totalIn = resIn.data?.reduce((sum, item) => sum + (item.total_incoming || 0), 0) || 0;
     const totalGood = resQc.data?.reduce((sum, item) => sum + (item.good_material || 0), 0) || 0;
     const totalNg = resQc.data?.reduce((sum, item) => sum + (item.ng_material || 0), 0) || 0;
     const totalSup = resSup.data?.reduce((sum, item) => sum + (item.material_sent || 0), 0) || 0;
 
-    // Tampilkan
-    document.getElementById('dash-incoming').innerText = totalIn.toLocaleString('id-ID');
-    document.getElementById('dash-incoming').classList.remove('animate-pulse');
-    
-    document.getElementById('dash-good').innerText = totalGood.toLocaleString('id-ID');
-    document.getElementById('dash-good').classList.remove('animate-pulse');
+    const elIn = document.getElementById('dash-incoming');
+    const elGood = document.getElementById('dash-good');
+    const elNg = document.getElementById('dash-ng');
+    const elSup = document.getElementById('dash-supply');
+    const elStatus = document.getElementById('dash-status');
 
-    document.getElementById('dash-ng').innerText = totalNg.toLocaleString('id-ID');
-    document.getElementById('dash-ng').classList.remove('animate-pulse');
+    if(elIn) { elIn.innerText = totalIn.toLocaleString('id-ID'); elIn.classList.remove('animate-pulse'); }
+    if(elGood) { elGood.innerText = totalGood.toLocaleString('id-ID'); elGood.classList.remove('animate-pulse'); }
+    if(elNg) { elNg.innerText = totalNg.toLocaleString('id-ID'); elNg.classList.remove('animate-pulse'); }
+    if(elSup) { elSup.innerText = totalSup.toLocaleString('id-ID'); elSup.classList.remove('animate-pulse'); }
 
-    document.getElementById('dash-supply').innerText = totalSup.toLocaleString('id-ID');
-    document.getElementById('dash-supply').classList.remove('animate-pulse');
-
-    document.getElementById('dash-status').innerHTML = `
-        <div class="flex items-center gap-2 mb-2"><span class="w-3 h-3 rounded-full bg-emerald-500"></span> <span class="font-medium">Incoming Material:</span> ${totalIn} Unit</div>
-        <div class="flex items-center gap-2 mb-2"><span class="w-3 h-3 rounded-full bg-blue-500"></span> <span class="font-medium">Lolos QC (Good):</span> ${totalGood} Unit</div>
-        <div class="flex items-center gap-2 mb-2"><span class="w-3 h-3 rounded-full bg-red-500"></span> <span class="font-medium">Gagal QC (NG):</span> ${totalNg} Unit</div>
-        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-amber-500"></span> <span class="font-medium">Terkirim ke Produksi:</span> ${totalSup} Unit</div>
-    `;
+    if(elStatus) {
+        elStatus.innerHTML = `
+            <div class="flex items-center gap-2 mb-2"><span class="w-3 h-3 rounded-full bg-emerald-500"></span> <span class="font-medium">Incoming Material:</span> ${totalIn} Unit</div>
+            <div class="flex items-center gap-2 mb-2"><span class="w-3 h-3 rounded-full bg-blue-500"></span> <span class="font-medium">Lolos QC (Good):</span> ${totalGood} Unit</div>
+            <div class="flex items-center gap-2 mb-2"><span class="w-3 h-3 rounded-full bg-red-500"></span> <span class="font-medium">Gagal QC (NG):</span> ${totalNg} Unit</div>
+            <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-amber-500"></span> <span class="font-medium">Terkirim ke Produksi:</span> ${totalSup} Unit</div>
+        `;
+    }
 }
 
 // ==========================================
@@ -244,8 +240,8 @@ function tampilkanDetailBarang() {
     const inputPi = document.getElementById('input_pi');
 
     if (!selectedPi) {
-        infoBox.classList.add('hidden');
-        inputPi.value = '';
+        if(infoBox) infoBox.classList.add('hidden');
+        if(inputPi) inputPi.value = '';
         return;
     }
 
@@ -253,8 +249,8 @@ function tampilkanDetailBarang() {
     if (barang) {
         document.getElementById('info_brand').innerText = barang.brand || '-';
         document.getElementById('info_spec').innerText = barang.spesifikasi || '-';
-        infoBox.classList.remove('hidden');
-        inputPi.value = barang.pi_no;
+        if(infoBox) infoBox.classList.remove('hidden');
+        if(inputPi) inputPi.value = barang.pi_no;
     }
 }
 
@@ -267,12 +263,10 @@ function exportExcel() {
         return;
     }
 
-    // Format ulang objek agar rapi di Excel
     const dataRapi = dataTabelSekarang.map(row => {
         const newRow = {};
         Object.keys(row).forEach(key => {
             if (key !== 'id' && key !== 'created_at') {
-                // Ubah nama kolom menjadi Title Case
                 const headerName = key.replace(/_/g, ' ').toUpperCase();
                 newRow[headerName] = row[key];
             }
@@ -280,12 +274,10 @@ function exportExcel() {
         return newRow;
     });
 
-    // Buat worksheet & workbook
     const ws = XLSX.utils.json_to_sheet(dataRapi);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Data");
 
-    // Download file
     const fileName = `${currentTable}_${new Date().toISOString().split('T')[0]}.xlsx`;
     XLSX.writeFile(wb, fileName);
     showToast('File Excel berhasil didownload!', 'success');
@@ -313,9 +305,14 @@ async function loadData() {
         return;
     }
 
-    dataTabelSekarang = data; // Simpan untuk export excel
+    dataTabelSekarang = data;
 
-    const columns = Object.keys(data[0]).filter(col => col !== 'id' && col !== 'created_at');
+    let columns = Object.keys(data[0]).filter(col => col !== 'id' && col !== 'created_at');
+    
+    if (currentRole === 'incoming') {
+        columns = ['pi_no', 'brand', 'spesifikasi', 'qty_pi', 'qty_po', 'no_sj', 'qty_sj', 'total_incoming', 'balance'];
+    }
+
     let html = `<table class="w-full text-sm text-left whitespace-nowrap">`;
     html += `<thead class="text-xs text-slate-500 uppercase bg-slate-100 border-b border-slate-200"><tr>`;
     columns.forEach(col => {
@@ -329,7 +326,7 @@ async function loadData() {
         columns.forEach(col => {
             let val = row[col];
             if (typeof val === 'number') val = val.toLocaleString('id-ID'); 
-            html += `<td class="px-6 py-3 text-slate-700">${val !== null ? val : '-'}</td>`;
+            html += `<td class="px-6 py-3 text-slate-700">${val !== undefined && val !== null ? val : '-'}</td>`;
         });
         html += `<td class="px-6 py-3 text-center flex justify-center gap-2">
             <button onclick="editData(${row.id})" class="px-3 py-1 bg-amber-100 text-amber-700 rounded hover:bg-amber-200 text-xs font-semibold">Edit</button>
@@ -488,9 +485,12 @@ async function hapusData(id) {
 }
 
 function resetForm() {
-    document.getElementById('form-data').reset();
-    document.getElementById('edit_id').value = '';
-    document.getElementById('btn-cancel').classList.add('hidden');
+    const form = document.getElementById('form-data');
+    if(form) form.reset();
+    const editId = document.getElementById('edit_id');
+    if(editId) editId.value = '';
+    const btnCancel = document.getElementById('btn-cancel');
+    if(btnCancel) btnCancel.classList.add('hidden');
     const infoBox = document.getElementById('info-barang');
     if (infoBox) infoBox.classList.add('hidden');
 }
