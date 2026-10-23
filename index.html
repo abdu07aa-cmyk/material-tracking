@@ -39,10 +39,10 @@
 
         <!-- Menu Navigasi Berdasarkan Role -->
         <div class="p-4 flex gap-2 overflow-x-auto whitespace-nowrap bg-white shadow-sm mb-4">
-            <button class="role-btn bg-blue-100 text-blue-700 px-4 py-2 rounded-lg font-medium" onclick="showForm('incoming')">Gudang</button>
-            <button class="role-btn bg-gray-100 text-gray-700 px-4 py-2 rounded-lg font-medium" onclick="showForm('qc')">QC</button>
-            <button class="role-btn bg-gray-100 text-gray-700 px-4 py-2 rounded-lg font-medium" onclick="showForm('supply')">Supply</button>
-            <button class="role-btn bg-gray-100 text-gray-700 px-4 py-2 rounded-lg font-medium" onclick="showForm('finish')">Finish Good</button>
+            <button class="role-btn bg-blue-100 text-blue-700 px-4 py-2 rounded-lg font-medium" onclick="showForm('incoming', event)">Gudang</button>
+            <button class="role-btn bg-gray-100 text-gray-700 px-4 py-2 rounded-lg font-medium" onclick="showForm('qc', event)">QC</button>
+            <button class="role-btn bg-gray-100 text-gray-700 px-4 py-2 rounded-lg font-medium" onclick="showForm('supply', event)">Supply</button>
+            <button class="role-btn bg-gray-100 text-gray-700 px-4 py-2 rounded-lg font-medium" onclick="showForm('finish', event)">Finish Good</button>
         </div>
 
         <!-- WADAH FORM INPUT -->
@@ -53,157 +53,7 @@
         </div>
     </div>
 
-    <script>
-        // GANTI DENGAN URL DAN KEY SUPABASE ANDA
-        const SUPABASE_URL = 'MASUKKAN_URL_SUPABASE_ANDA';
-        const SUPABASE_ANON_KEY = 'MASUKKAN_ANON_KEY_SUPABASE_ANDA';
-        
-        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-        // --- 1. LOGIKA AUTENTIKASI (LOGIN) ---
-        document.getElementById('login-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const email = document.getElementById('email').value;
-            const password = document.getElementById('password').value;
-
-            const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-
-            if (error) {
-                document.getElementById('login-error').classList.remove('hidden');
-            } else {
-                document.getElementById('login-section').classList.add('hidden');
-                document.getElementById('main-section').classList.remove('hidden');
-                showForm('incoming'); // Tampilkan form default
-            }
-        });
-
-        document.getElementById('logout-btn').addEventListener('click', async () => {
-            await supabase.auth.signOut();
-            location.reload();
-        });
-
-        // --- 2. LOGIKA UI & FORM ---
-        function showForm(role) {
-            // Reset warna tombol
-            document.querySelectorAll('.role-btn').forEach(btn => {
-                btn.classList.remove('bg-blue-100', 'text-blue-700');
-                btn.classList.add('bg-gray-100', 'text-gray-700');
-            });
-            event.target.classList.remove('bg-gray-100', 'text-gray-700');
-            event.target.classList.add('bg-blue-100', 'text-blue-700');
-
-            // Render form HTML berdasarkan role
-            const container = document.getElementById('form-container');
-            if (role === 'incoming') {
-                container.innerHTML = `
-                    <h2 class="text-lg font-bold mb-4 border-b pb-2">Input Incoming Material</h2>
-                    <form id="form-incoming" class="space-y-3">
-                        <input type="text" id="in_pi" placeholder="PI NO" required class="w-full p-2 border rounded">
-                        <input type="text" id="in_brand" placeholder="Brand" class="w-full p-2 border rounded">
-                        <input type="text" id="in_spec" placeholder="Spesifikasi" class="w-full p-2 border rounded">
-                        <input type="number" id="in_qtypo" placeholder="Qty PO" class="w-full p-2 border rounded">
-                        <input type="text" id="in_sj" placeholder="No SJ / DO" class="w-full p-2 border rounded">
-                        <input type="number" id="in_qtysj" placeholder="Qty SJ" class="w-full p-2 border rounded">
-                        <button type="submit" class="w-full bg-green-600 text-white p-2 rounded font-bold mt-4">Simpan Data</button>
-                    </form>
-                `;
-                document.getElementById('form-incoming').addEventListener('submit', submitIncoming);
-            } 
-            else if (role === 'qc') {
-                container.innerHTML = `
-                    <h2 class="text-lg font-bold mb-4 border-b pb-2">Input QC Incoming</h2>
-                    <form id="form-qc" class="space-y-3">
-                        <input type="text" id="qc_pi" placeholder="PI NO (Cari data gudang)" required class="w-full p-2 border rounded">
-                        <input type="number" id="qc_good" placeholder="Good Material" class="w-full p-2 border rounded">
-                        <input type="number" id="qc_ng" placeholder="NG Material" class="w-full p-2 border rounded">
-                        <input type="text" id="qc_desc" placeholder="Description" class="w-full p-2 border rounded">
-                        <button type="submit" class="w-full bg-green-600 text-white p-2 rounded font-bold mt-4">Simpan Data</button>
-                    </form>
-                `;
-                document.getElementById('form-qc').addEventListener('submit', submitQC);
-            }
-            else if (role === 'supply') {
-                container.innerHTML = `
-                    <h2 class="text-lg font-bold mb-4 border-b pb-2">Input Supply Material</h2>
-                    <form id="form-supply" class="space-y-3">
-                        <input type="text" id="sp_pi" placeholder="PI NO" required class="w-full p-2 border rounded">
-                        <label class="text-sm text-gray-600">Material Request Date</label>
-                        <input type="date" id="sp_req" class="w-full p-2 border rounded">
-                        <input type="number" id="sp_sent" placeholder="No Of Material Sent" class="w-full p-2 border rounded">
-                        <label class="text-sm text-gray-600">Material Return Date</label>
-                        <input type="date" id="sp_ret" class="w-full p-2 border rounded">
-                        <input type="number" id="sp_noret" placeholder="No Of Material Return" class="w-full p-2 border rounded">
-                        <label class="text-sm text-gray-600">Received Date</label>
-                        <input type="date" id="sp_recdate" class="w-full p-2 border rounded">
-                        <button type="submit" class="w-full bg-green-600 text-white p-2 rounded font-bold mt-4">Simpan Data</button>
-                    </form>
-                `;
-                document.getElementById('form-supply').addEventListener('submit', submitSupply);
-            }
-            else if (role === 'finish') {
-                container.innerHTML = `
-                    <h2 class="text-lg font-bold mb-4 border-b pb-2">Input Finish Good</h2>
-                    <form id="form-finish" class="space-y-3">
-                        <input type="text" id="fg_pi" placeholder="PI NO" required class="w-full p-2 border rounded">
-                        <input type="number" id="fg_karton" placeholder="Karton" class="w-full p-2 border rounded">
-                        <input type="number" id="fg_display" placeholder="Display" class="w-full p-2 border rounded">
-                        <input type="number" id="fg_booklet" placeholder="Booklet / Cones" class="w-full p-2 border rounded">
-                        <button type="submit" class="w-full bg-green-600 text-white p-2 rounded font-bold mt-4">Simpan Data</button>
-                    </form>
-                `;
-                document.getElementById('form-finish').addEventListener('submit', submitFinishGood);
-            }
-        }
-
-        // --- 3. LOGIKA SIMPAN KE SUPABASE ---
-        async function submitIncoming(e) {
-            e.preventDefault();
-            const qtyPo = parseInt(document.getElementById('in_qtypo').value) || 0;
-            const qtySj = parseInt(document.getElementById('in_qtysj').value) || 0;
-            const balance = qtyPo - qtySj; // Logika Balance
-
-            const { error } = await supabase.from('incoming_material').insert([{
-                pi_no: document.getElementById('in_pi').value,
-                brand: document.getElementById('in_brand').value,
-                spesifikasi: document.getElementById('in_spec').value,
-                qty_po: qtyPo,
-                no_sj: document.getElementById('in_sj').value,
-                qty_sj: qtySj,
-                total_incoming: qtySj,
-                balance: balance
-            }]);
-            
-            if (error) alert('Gagal: ' + error.message);
-            else { alert('Data Gudang Berhasil Disimpan!'); e.target.reset(); }
-        }
-
-        async function submitQC(e) {
-            e.preventDefault();
-            const good = parseInt(document.getElementById('qc_good').value) || 0;
-            const ng = parseInt(document.getElementById('qc_ng').value) || 0;
-            
-            const { error } = await supabase.from('qc_incoming').insert([{
-                pi_no: document.getElementById('qc_pi').value,
-                good_material: good,
-                ng_material: ng,
-                description: document.getElementById('qc_desc').value,
-                balance: good - ng
-            }]);
-            
-            if (error) alert('Gagal: ' + error.message + ' (Pastikan PI NO sudah diinput Gudang)');
-            else { alert('Data QC Berhasil Disimpan!'); e.target.reset(); }
-        }
-
-        // Logika Supply & Finish Good bisa ditambahkan dengan pola yang sama seperti di atas
-        async function submitSupply(e) {
-            e.preventDefault();
-            alert('Fungsi simpan Supply material siap dihubungkan ke Supabase!');
-        }
-
-        async function submitFinishGood(e) {
-            e.preventDefault();
-            alert('Fungsi simpan Finish Good siap dihubungkan ke Supabase!');
-        }
-    </script>
+    <!-- PANGGIL FILE JS DI SINI -->
+    <script src="app.js"></script>
 </body>
 </html>
