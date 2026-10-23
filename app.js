@@ -1,5 +1,6 @@
 // STATE GLOBAL
 let currentTable = 'incoming_material';
+let dataGudangSementara = []; // Menyimpan data gudang untuk dropdown
 
 // ==========================================
 // FUNGSI NOTIFIKASI (TOAST)
@@ -36,6 +37,7 @@ function showForm(role, event) {
     const labelClass = "block text-sm font-semibold text-slate-700 mb-1.5";
     const btnClass = "w-full md:w-auto px-6 py-2.5 bg-accent text-white font-semibold rounded-lg hover:bg-blue-700 transition-all mt-4";
 
+    // --- FORM GUDANG ---
     if (role === 'incoming') {
         currentTable = 'incoming_material';
         document.getElementById('table-title').innerText = 'Daftar Incoming Material';
@@ -54,39 +56,53 @@ function showForm(role, event) {
         document.getElementById('form-incoming').addEventListener('submit', submitIncoming);
         loadData();
     } 
+    // --- FORM QC ---
     else if (role === 'qc') {
         currentTable = 'qc_incoming';
         document.getElementById('table-title').innerText = 'Daftar QC Incoming';
         container.innerHTML = `
             <h2 class="text-xl font-bold text-slate-800 mb-6 border-b pb-2">Input QC Incoming</h2>
-            <!-- FITUR BARU: Dropdown untuk memilih PI NO dari Gudang -->
             <div class="mb-4">
-                <label class="${labelClass} text-blue-600">Tarik Data dari Gudang (Pilih PI NO):</label>
-                <select id="qc_pi_select" class="${inputClass} border-blue-400 bg-blue-50" onchange="document.getElementById('qc_pi').value = this.value">
-                    <option value="">-- Pilih Barang dari Gudang --</option>
+                <label class="${labelClass} text-blue-700">Pilih Barang dari Gudang:</label>
+                <select id="select_pi" class="${inputClass} border-blue-400 bg-blue-50 mb-3" onchange="tampilkanDetailBarang('qc')">
+                    <option value="">-- Pilih PI NO --</option>
                 </select>
-                <p class="text-xs text-slate-500 mt-1">Atau ketik manual jika tidak ada di daftar.</p>
+                <div id="info-barang-qc" class="hidden bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm">
+                    <p class="mb-1"><strong class="text-blue-800">Brand:</strong> <span id="info_brand_qc"></span></p>
+                    <p class="mb-1"><strong class="text-blue-800">Spesifikasi:</strong> <span id="info_spec_qc"></span></p>
+                    <p><strong class="text-blue-800">Total Incoming:</strong> <span id="info_total_qc"></span></p>
+                </div>
             </div>
-            
-            <form id="form-qc" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div><label class="${labelClass}">PI NO</label><input type="text" id="qc_pi" required class="${inputClass}"></div>
+            <form id="form-qc" class="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
+                <div><label class="${labelClass}">PI NO (Otomatis)</label><input type="text" id="input_pi" required class="${inputClass} bg-slate-100" readonly></div>
                 <div><label class="${labelClass}">Good Material</label><input type="number" id="qc_good" class="${inputClass}"></div>
                 <div><label class="${labelClass}">NG Material</label><input type="number" id="qc_ng" class="${inputClass}"></div>
-                <div><label class="${labelClass}">Description</label><input type="text" id="qc_desc" class="${inputClass}"></div>
+                <div><label class="${labelClass}">Description (Keterangan)</label><input type="text" id="qc_desc" class="${inputClass}"></div>
                 <div class="md:col-span-2"><button type="submit" class="${btnClass}">Simpan Data QC</button></div>
             </form>
         `;
         document.getElementById('form-qc').addEventListener('submit', submitQC);
         loadData();
-        loadDropdownGudang(); // Panggil fungsi untuk isi dropdown
+        loadDropdownGudang('qc');
     }
+    // --- FORM SUPPLY (BARU DIPERBAIKI) ---
     else if (role === 'supply') {
         currentTable = 'supply_material';
         document.getElementById('table-title').innerText = 'Daftar Supply Material';
         container.innerHTML = `
             <h2 class="text-xl font-bold text-slate-800 mb-6 border-b pb-2">Input Supply Material</h2>
-            <form id="form-supply" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div><label class="${labelClass}">PI NO</label><input type="text" id="sp_pi" required class="${inputClass}"></div>
+            <div class="mb-4">
+                <label class="${labelClass} text-blue-700">Pilih Barang dari Gudang:</label>
+                <select id="select_pi" class="${inputClass} border-blue-400 bg-blue-50 mb-3" onchange="tampilkanDetailBarang('supply')">
+                    <option value="">-- Pilih PI NO --</option>
+                </select>
+                <div id="info-barang-supply" class="hidden bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm">
+                    <p class="mb-1"><strong class="text-blue-800">Brand:</strong> <span id="info_brand_supply"></span></p>
+                    <p><strong class="text-blue-800">Spesifikasi:</strong> <span id="info_spec_supply"></span></p>
+                </div>
+            </div>
+            <form id="form-supply" class="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
+                <div><label class="${labelClass}">PI NO (Otomatis)</label><input type="text" id="input_pi" required class="${inputClass} bg-slate-100" readonly></div>
                 <div><label class="${labelClass}">Material Request Date</label><input type="date" id="sp_req" class="${inputClass}"></div>
                 <div><label class="${labelClass}">No Of Material Sent</label><input type="number" id="sp_sent" class="${inputClass}"></div>
                 <div><label class="${labelClass}">Return Date</label><input type="date" id="sp_ret" class="${inputClass}"></div>
@@ -97,14 +113,26 @@ function showForm(role, event) {
         `;
         document.getElementById('form-supply').addEventListener('submit', submitSupply);
         loadData();
+        loadDropdownGudang('supply');
     }
+    // --- FORM FINISH GOOD (BARU DIPERBAIKI) ---
     else if (role === 'finish') {
         currentTable = 'finish_good';
         document.getElementById('table-title').innerText = 'Daftar Finish Good';
         container.innerHTML = `
             <h2 class="text-xl font-bold text-slate-800 mb-6 border-b pb-2">Input Finish Good</h2>
-            <form id="form-finish" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div><label class="${labelClass}">PI NO</label><input type="text" id="fg_pi" required class="${inputClass}"></div>
+            <div class="mb-4">
+                <label class="${labelClass} text-blue-700">Pilih Barang dari Gudang:</label>
+                <select id="select_pi" class="${inputClass} border-blue-400 bg-blue-50 mb-3" onchange="tampilkanDetailBarang('finish')">
+                    <option value="">-- Pilih PI NO --</option>
+                </select>
+                <div id="info-barang-finish" class="hidden bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm">
+                    <p class="mb-1"><strong class="text-blue-800">Brand:</strong> <span id="info_brand_finish"></span></p>
+                    <p><strong class="text-blue-800">Spesifikasi:</strong> <span id="info_spec_finish"></span></p>
+                </div>
+            </div>
+            <form id="form-finish" class="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
+                <div><label class="${labelClass}">PI NO (Otomatis)</label><input type="text" id="input_pi" required class="${inputClass} bg-slate-100" readonly></div>
                 <div><label class="${labelClass}">Karton</label><input type="number" id="fg_karton" class="${inputClass}"></div>
                 <div><label class="${labelClass}">Display</label><input type="number" id="fg_display" class="${inputClass}"></div>
                 <div><label class="${labelClass}">Booklet / Cones</label><input type="number" id="fg_booklet" class="${inputClass}"></div>
@@ -113,26 +141,58 @@ function showForm(role, event) {
         `;
         document.getElementById('form-finish').addEventListener('submit', submitFinishGood);
         loadData();
+        loadDropdownGudang('finish');
     }
 }
 
 // ==========================================
-// FUNGSI RELASI: TARIK DATA DARI GUDANG KE QC
+// FUNGSI DROPDOWN & DETAIL (BERLAKU UNTUK SEMUA LEADER)
 // ==========================================
-async function loadDropdownGudang() {
-    const select = document.getElementById('qc_pi_select');
-    if (!select) return; // Jika bukan di halaman QC, lewati
+async function loadDropdownGudang(role) {
+    const select = document.getElementById('select_pi');
+    if (!select) return; 
 
-    // Ambil data dari tabel Gudang
-    const { data, error } = await supabaseClient.from('incoming_material').select('pi_no, brand');
+    const { data, error } = await supabaseClient.from('incoming_material').select('*');
 
     if (!error && data) {
+        dataGudangSementara = data; 
         data.forEach(item => {
             const option = document.createElement('option');
             option.value = item.pi_no;
-            option.text = `${item.pi_no} - ${item.brand || 'Tanpa Brand'}`;
+            option.text = `${item.pi_no} (${item.brand || 'Tanpa Brand'})`;
             select.appendChild(option);
         });
+    }
+}
+
+// Fungsi ini menerima parameter role agar tahu kotak info mana yang harus diisi
+function tampilkanDetailBarang(role) {
+    const selectedPi = document.getElementById('select_pi').value;
+    
+    // Elemen-elemen yang berbeda tergantung role
+    const infoBox = document.getElementById(`info-barang-${role}`);
+    const inputPi = document.getElementById('input_pi');
+
+    if (!selectedPi) {
+        infoBox.classList.add('hidden');
+        inputPi.value = '';
+        return;
+    }
+
+    const barang = dataGudangSementara.find(item => item.pi_no === selectedPi);
+
+    if (barang) {
+        // Isi teks info
+        document.getElementById(`info_brand_${role}`).innerText = barang.brand || '-';
+        document.getElementById(`info_spec_${role}`).innerText = barang.spesifikasi || '-';
+        
+        // Khusus QC, kita tampilkan Total Incoming juga
+        if (role === 'qc' && document.getElementById('info_total_qc')) {
+            document.getElementById('info_total_qc').innerText = barang.total_incoming || 0;
+        }
+
+        infoBox.classList.remove('hidden');
+        inputPi.value = barang.pi_no;
     }
 }
 
@@ -202,48 +262,65 @@ async function submitIncoming(e) {
 
 async function submitQC(e) {
     e.preventDefault();
+    const piNo = document.getElementById('input_pi').value;
+    if (!piNo) return showToast('Pilih barang dari dropdown!', 'error');
+
     const good = parseInt(document.getElementById('qc_good').value) || 0;
     const ng = parseInt(document.getElementById('qc_ng').value) || 0;
     
     const { error } = await supabaseClient.from('qc_incoming').insert([{
-        pi_no: document.getElementById('qc_pi').value,
-        good_material: good,
-        ng_material: ng,
-        description: document.getElementById('qc_desc').value,
-        balance: good - ng
+        pi_no: piNo, good_material: good, ng_material: ng,
+        description: document.getElementById('qc_desc').value, balance: good - ng
     }]);
     
-    if (error) showToast('Gagal: ' + error.message + ' (Pastikan PI NO valid)', 'error');
-    else { showToast('Data QC Disimpan!', 'success'); e.target.reset(); loadData(); }
+    if (error) showToast('Gagal: ' + error.message, 'error');
+    else { 
+        showToast('Data QC Disimpan!', 'success'); e.target.reset(); 
+        document.getElementById('info-barang-qc').classList.add('hidden'); 
+        loadData(); 
+    }
 }
 
 async function submitSupply(e) {
     e.preventDefault();
+    const piNo = document.getElementById('input_pi').value;
+    if (!piNo) return showToast('Pilih barang dari dropdown!', 'error');
+
     const { error } = await supabaseClient.from('supply_material').insert([{
-        pi_no: document.getElementById('sp_pi').value,
+        pi_no: piNo,
         request_date: document.getElementById('sp_req').value || null,
         material_sent: parseInt(document.getElementById('sp_sent').value) || 0,
         return_date: document.getElementById('sp_ret').value || null,
         no_return: parseInt(document.getElementById('sp_noret').value) || 0,
         received_date: document.getElementById('sp_recdate').value || null
     }]);
+    
     if (error) showToast('Gagal: ' + error.message, 'error');
-    else { showToast('Data Supply Disimpan!', 'success'); e.target.reset(); loadData(); }
+    else { 
+        showToast('Data Supply Disimpan!', 'success'); e.target.reset(); 
+        document.getElementById('info-barang-supply').classList.add('hidden');
+        loadData(); 
+    }
 }
 
 async function submitFinishGood(e) {
     e.preventDefault();
+    const piNo = document.getElementById('input_pi').value;
+    if (!piNo) return showToast('Pilih barang dari dropdown!', 'error');
+
     const karton = parseInt(document.getElementById('fg_karton').value) || 0;
     const display = parseInt(document.getElementById('fg_display').value) || 0;
     const booklet = parseInt(document.getElementById('fg_booklet').value) || 0;
 
     const { error } = await supabaseClient.from('finish_good').insert([{
-        pi_no: document.getElementById('fg_pi').value,
-        karton: karton,
-        display: display,
-        booklet_cones: booklet,
-        balance: karton + display + booklet // Logika balance finish good, sesuaikan jika salah
+        pi_no: piNo, karton: karton, display: display, booklet_cones: booklet,
+        balance: karton + display + booklet 
     }]);
+    
     if (error) showToast('Gagal: ' + error.message, 'error');
-    else { showToast('Data Finish Good Disimpan!', 'success'); e.target.reset(); loadData(); }
+    else { 
+        showToast('Data Finish Good Disimpan!', 'success'); e.target.reset(); 
+        document.getElementById('info-barang-finish').classList.add('hidden');
+        loadData(); 
+    }
 }
