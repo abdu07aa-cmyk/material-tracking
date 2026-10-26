@@ -251,7 +251,8 @@ async function del(table, id) {
   if (!data || !data.length) throw new Error('Data tidak terhapus. Hanya Admin yang boleh menghapus.');
 }
 const fmtIn = (unit, input, pps) => unit === 'SHEET' ? `${num(input)} sheet × ${num(pps)} pcs` : 'PCS';
-const itemLbl = p => [p.item_name, p.specification].filter(Boolean).join(' · ');
+const itemLbl = p => [p.item_name, p.specification, p.leaves_per_book ? `${num(p.leaves_per_book)} leaves` : ''].filter(Boolean).join(' · ');
+const isFilterBook = n => /filter\s*-?\s*book/i.test(n || '');
 const poLabel = p => `${p.pi_no} · ${p.brand}${itemLbl(p) ? ' · ' + itemLbl(p) : ''}`;
 const ITEM_NAMES = ['Booklet', 'Filter Book', 'Filter Cones', 'Display', 'Cover'];
 // urutkan agar item-item satu PI berdekatan (urutan PI = urutan pertama kali dibuat)
@@ -398,15 +399,26 @@ function poForm(row, rl, pre) {
       { name: 'brand', label: 'Brand', req: true, placeholder: 'mis. SB BROWN + TIPS' },
       { name: 'item_name', label: 'Jenis Barang', req: true, list: names, placeholder: 'pilih atau ketik, mis. Booklet' },
       { name: 'specification', label: 'Spesifikasi Incoming Material', placeholder: 'mis. ukuran / gramasi / warna (boleh kosong)' },
+      { name: 'leaves_per_book', label: 'Isi per Filter Book (leaves)', type: 'number', min: 1, req: true, list: ['32', '33', '40', '50', '60'],
+        placeholder: 'mis. 32', showIf: v => isFilterBook(v.item_name), help: 'Jumlah leaves yang dilem menjadi 1 filter book jadi.' },
       ...UNIT_FIELDS,
       { name: 'qty_po', label: 'Qty PO', type: 'number', req: true, min: 0.01, u: true }
     ],
     values: row ? { ...row, pps: row.pcs_per_sheet, qty_po: sheet ? row.qty_po_input : row.qty_po } : (pre || null),
     keepUnit: !!row,
     submit2: row ? null : 'Simpan & Tambah Item Lain di PI Ini',
+    onInput: (v, hint) => {
+      if (!isFilterBook(v.item_name)) return hint();
+      const L = Number(v.leaves_per_book), k = Number(v.pps);
+      let t = 'Filter Book datang dalam sheet: 1 sheet = kiri + kanan (mis. 45 + 45 = 90 pcs). Pilih satuan SHEET dan isi per sheet 90.';
+      if (v.unit === 'SHEET' && k > 0 && L > 0)
+        t += `<br>1 sheet (${num(k)} pcs) = ${num(Math.floor(k / L))} filter book @${num(L)} leaves, sisa ${num(k % L)} leaves (sisa digabung ke sheet berikutnya).`;
+      hint(t);
+    },
     onSubmit: async (v, again) => {
       await save('po_items', {
         pi_no: v.pi_no, brand: v.brand, item_name: v.item_name, specification: v.specification || '',
+        leaves_per_book: isFilterBook(v.item_name) ? v.leaves_per_book : null,
         qty_po: v.qty_po, unit: v.unit, pcs_per_sheet: v.unit === 'SHEET' ? v.pps : null, qty_po_input: v.raw.qty_po
       }, row?.id);
       toast(again ? 'Item tersimpan. Isi item berikutnya.' : 'Item PI tersimpan');
@@ -592,18 +604,24 @@ async function fgForm(row, rl) {
       { name: 'received_date', label: 'Tanggal Terima', type: 'date', req: true, default: today() },
       { name: 'karton', label: 'Karton', type: 'number', default: 0, half: true },
       { name: 'display', label: 'Display', type: 'number', default: 0, half: true },
-      { name: 'booklet_cones', label: 'Booklet / Cones', type: 'number', default: 0 },
+      { name: 'booklet_cones', label: 'Booklet / Cones / Filter Book (jadi)', type: 'number', default: 0 },
       { name: 'notes', label: 'Catatan', type: 'textarea' }
     ],
     values: row,
     onInput: (v, hint) => {
       const p = by[v.po_item_id];
       if (!p) return hint();
-      const done = Number(p.fg_booklet) - (row ? Number(row.booklet_cones) : 0);
-      const sisa = Number(p.at_production) - done;
-      const over = (v.booklet_cones || 0) > sisa;
-      hint(`Material di produksi <b>${num(p.at_production)}</b> · Booklet/Cones jadi <b>${num(done)}</b> · Sisa <b>${num(sisa)}</b>` +
-        (over ? '<br>⚠ Booklet/Cones melebihi material yang ada di produksi — periksa kembali.' : ''), over ? 'warn' : 'info');
+      const L = Number(p.leaves_per_book) || 1;
+      const doneBooks = Number(p.fg_booklet) - (row ? Number(row.booklet_cones) : 0);
+      const sisa = Number(p.at_production) - doneBooks * L;
+      const need = (v.booklet_cones || 0) * L;
+      const over = need > sisa;
+      hint(L > 1
+        ? `Filter Book isi <b>${num(L)}</b> leaves · Material di produksi <b>${num(p.at_production)}</b> · Terpakai <b>${num(doneBooks * L)}</b> (${num(doneBooks)} buku jadi) · Sisa <b>${num(sisa)}</b> leaves ≈ ${num(Math.floor(sisa / L))} buku` +
+          (need > 0 ? `<br>Input ini ${num(v.booklet_cones)} buku = ${num(need)} leaves` : '') +
+          (over ? '<br>⚠ Melebihi leaves yang ada di produksi — periksa kembali.' : '')
+        : `Material di produksi <b>${num(p.at_production)}</b> · Booklet/Cones jadi <b>${num(doneBooks)}</b> · Sisa <b>${num(sisa)}</b>` +
+          (over ? '<br>⚠ Booklet/Cones melebihi material yang ada di produksi — periksa kembali.' : ''), over ? 'warn' : 'info');
     },
     onSubmit: async v => {
       if ((v.karton || 0) + (v.display || 0) + (v.booklet_cones || 0) <= 0) throw new Error('Isi minimal salah satu: Karton, Display, atau Booklet/Cones.');
@@ -642,11 +660,11 @@ const DEFS = {
         load: async () => {
           const rows = groupSort(await q('v_po_summary'));
           poForm.names = [...new Set(rows.map(p => p.item_name).filter(Boolean))];
-          return rows.map(p => ({ ...p, po_input: fmtIn(p.unit, p.qty_po_input, p.pcs_per_sheet) }));
+          return rows.map(p => ({ ...p, po_input: fmtIn(p.unit, p.qty_po_input, p.pcs_per_sheet), lpb_text: p.leaves_per_book ? `${num(p.leaves_per_book)} leaves` : '' }));
         },
         cols: [
           { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' }, { label: 'Spesifikasi', k: 'specification' },
-          { label: 'Satuan PO', k: 'po_input' }, { label: 'Qty PO (pcs)', k: 'qty_po', t: 'n', cls: 'num' }, { label: 'Total Incoming', k: 'total_incoming', t: 'n', cls: 'num' },
+          { label: 'Satuan PO', k: 'po_input' }, { label: 'Isi Filter Book', k: 'lpb_text' }, { label: 'Qty PO (pcs)', k: 'qty_po', t: 'n', cls: 'num' }, { label: 'Total Incoming', k: 'total_incoming', t: 'n', cls: 'num' },
           { label: 'Balance', k: 'balance_po', t: 'b', cls: 'num' }
         ],
         add: { label: 'PI / Item Baru', stage: 'gudang', run: rl => poForm(null, rl) },
@@ -830,7 +848,7 @@ function poCard(p) {
       <div class="st g"><em>Gudang</em><strong>${num(p.total_incoming)}</strong><div class="bar"><i style="width:${pct}%"></i></div><small>dari PO ${num(p.qty_po)}</small></div>
       <div class="st q"><em>QC</em><strong>${num(p.good_total)} <span style="font-size:12px;font-weight:600">good</span></strong><small>NG ${num(p.ng_total)} · menunggu ${num(p.qc_pending)}</small></div>
       <div class="st s"><em>Supply</em><strong>${num(p.at_production)} <span style="font-size:12px;font-weight:600">di produksi</span></strong><small>Kirim ${num(p.supplied_total)} · retur ${num(p.returned_total)}<br>Stok siap ${num(p.stock_ready)}</small></div>
-      <div class="st f"><em>Finish Good</em><strong>${num(p.fg_booklet)} <span style="font-size:12px;font-weight:600">booklet/cones</span></strong><small>Karton ${num(p.fg_karton)} · Display ${num(p.fg_display)}<br>Balance ${num(p.fg_balance)}</small></div>
+      <div class="st f"><em>Finish Good</em><strong>${num(p.fg_booklet)} <span style="font-size:12px;font-weight:600">${p.leaves_per_book ? 'filter book' : 'booklet/cones'}</span></strong><small>Karton ${num(p.fg_karton)} · Display ${num(p.fg_display)}<br>Balance ${num(p.fg_balance)}</small></div>
     </div></div>`;
 }
 
@@ -876,7 +894,7 @@ async function loadReport() {
     let cum = 0, cumBook = 0;
     for (let i = 0; i < n; i++) {
       const r = R[i], s = I[i], f = F[i];
-      const row = { no: i === 0 && newPi ? piNo : null, newPi: i === 0 && newPi, pi_no: p.pi_no, brand: p.brand, item: p.item_name, spec: p.specification,
+      const row = { no: i === 0 && newPi ? piNo : null, newPi: i === 0 && newPi, pi_no: p.pi_no, brand: p.brand, item: p.item_name + (p.leaves_per_book ? ` (${num(p.leaves_per_book)} leaves)` : ''), spec: p.specification,
         qty_po: i === 0 ? p.qty_po : null, first: i === 0 };
       if (r) {
         cum += Number(r.qty_sj);
@@ -890,7 +908,7 @@ async function loadReport() {
           ret_qty: s.returned_qty, sup_bal: s.balance });
       }
       if (f) {
-        cumBook += Number(f.booklet_cones);
+        cumBook += Number(f.booklet_cones) * (Number(p.leaves_per_book) || 1);
         Object.assign(row, { fg_date: f.received_date, karton: f.karton, display: f.display, booklet: f.booklet_cones,
           fg_bal: Number(p.at_production) - cumBook });
       }
