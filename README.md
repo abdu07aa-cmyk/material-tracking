@@ -9,6 +9,15 @@ Web app mobile-friendly untuk mencatat alur material. Data saling terhubung per 
 
 Semua saldo (balance) dihitung otomatis oleh database, tidak diinput manual.
 
+## Banyak jenis barang dalam satu PI
+Satu PI bisa berisi Booklet, Filter Book, Filter Cones, Display, Cover, dll. Setiap jenis barang adalah satu **item** dengan Qty PO, satuan, dan saldonya sendiri.
+- **Gudang → Data PI → "PI / Item Baru"**: isi PI No, Brand, **Jenis Barang** (pilih saran atau ketik sendiri), Spesifikasi, dan Qty PO.
+- Tombol **"Simpan & Tambah Item Lain di PI Ini"** menyimpan lalu membuka form berikutnya dengan PI No dan Brand sudah terisi. Tinggal ganti Jenis Barang, Spesifikasi, dan Qty.
+- Di tabel Data PI, tombol **+ Item** pada baris mana pun menambah item baru di PI yang sama.
+- Satu Surat Jalan yang berisi beberapa jenis barang dicatat satu baris per jenis barang dengan No. SJ yang sama.
+- Dashboard dan Laporan Tabel dikelompokkan per PI, dengan kolom **Jenis Barang**. Finish Good dicatat per item, sama seperti baris di Excel.
+- **Update dari versi sebelumnya:** jalankan ulang seluruh isi `schema.sql`. Data lama aman; item lama belum punya Jenis Barang, buka tombol ubah lalu isi Jenis Barang-nya.
+
 ## Satuan PCS dan SHEET
 Barang dari supplier bisa datang dalam PCS atau masih berbentuk sheet (1 sheet berisi 3, 4, 6, 8 pcs atau lebih, bebas per material/SJ).
 - Semua jumlah dan saldo di database dihitung dalam **PCS**, jadi balance Gudang → QC → Supply → Finish Good selalu sinkron.
