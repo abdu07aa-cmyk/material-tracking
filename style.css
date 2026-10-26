@@ -193,3 +193,13 @@ select.role{padding:8px 10px;border:1px solid #d5dbe7;border-radius:8px;backgrou
 .rpt td{font-variant-numeric:tabular-nums}
 .rpt td.l{text-align:left}
 .rpt td.dim{color:#94a3b8}
+
+/* ---------- Kelompok PI & item ---------- */
+.pi-group{margin-bottom:22px}
+.pi-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:4px 2px 10px}
+.pi-head b{font-size:15px;font-weight:800}
+.pi-head span{color:var(--mut);font-weight:600}
+.pi-head em{font-style:normal;font-size:12px;font-weight:600;background:#e8ecf4;border-radius:999px;padding:2px 10px;color:#475569}
+.sheet-f{flex-wrap:wrap}
+.sheet-f #sub2{flex:1 1 100%;order:-1}
+.rpt tbody tr.pigrp td{border-top:3px solid #6b9b4d}
