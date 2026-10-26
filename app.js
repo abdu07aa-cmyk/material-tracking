@@ -342,7 +342,7 @@ function xlDataCell(cell, c, v, band) {
 async function exportXLSX(title, cols, rows, name) {
   await loadExcelJS();
   const wb = new ExcelJS.Workbook(); wb.creator = 'MaterialFlow';
-  const ws = wb.addWorksheet('Data', { views: [{ state: 'frozen', ySplit: 4 }] });
+  const ws = wb.addWorksheet('Data');
   const cc = cols.filter(c => c.k);
   ws.columns = cc.map(c => ({ width: c.w || (c.t === 'd' ? 15 : c.t === 'n' || c.t === 'b' ? 14 : 22) }));
   xlTitle(ws, title.toUpperCase(), cc.length);
@@ -922,7 +922,7 @@ async function exportReportXLSX(rows) {
   const wb = new ExcelJS.Workbook(); wb.creator = 'MaterialFlow';
   const flat = REPORT.flatMap(g => g.cols);
   const N = flat.length;
-  const ws = wb.addWorksheet('Laporan', { views: [{ state: 'frozen', ySplit: 4, xSplit: 3 }] });
+  const ws = wb.addWorksheet('Laporan');
   ws.columns = flat.map(c => ({ width: c.w }));
   xlTitle(ws, 'LAPORAN INCOMING MATERIAL → QC → SUPPLY → FINISH GOOD (SATUAN: PCS)', N);
   let col = 1;
