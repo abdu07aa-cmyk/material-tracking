@@ -58,7 +58,7 @@ function toast(msg, type = 'ok') {
 
 function errMsg(e) {
   const m = e?.message || String(e), c = e?.code;
-  if (c === '23505') return 'Data sudah ada (duplikat). Periksa kembali No PI / No SJ.';
+  if (c === '23505') return 'Data sudah ada (duplikat). Periksa kembali No PI + Jenis Barang + Spesifikasi, atau No SJ.';
   if (c === '23503') return 'Data ini sudah dipakai proses berikutnya (mis. sudah ada QC / pengiriman). Hapus data turunannya terlebih dahulu.';
   if (c === '42501' || /row-level security/i.test(m)) return 'Anda tidak punya hak akses untuk aksi ini.';
   if (c === '23514') return 'Data tidak valid. Periksa angka yang diisi.';
@@ -103,7 +103,9 @@ function fieldHTML(f, val) {
     inp = `<textarea id="${id}" name="${f.name}" rows="3" placeholder="${esc(f.placeholder || '')}" ${dis}>${esc(v)}</textarea>`;
   } else {
     const n = f.type === 'number' ? `inputmode="decimal" step="any" min="${f.min ?? 0}"` : '';
-    inp = `<input id="${id}" name="${f.name}" type="${f.type || 'text'}" value="${esc(v)}" ${n} placeholder="${esc(f.placeholder || '')}" autocomplete="off" ${dis}>`;
+    const ls = f.list ? `list="dl_${f.name}"` : '';
+    inp = `<input id="${id}" name="${f.name}" type="${f.type || 'text'}" value="${esc(v)}" ${n} ${ls} placeholder="${esc(f.placeholder || '')}" autocomplete="off" ${dis}>` +
+      (f.list ? `<datalist id="dl_${f.name}">${f.list.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>` : '');
   }
   return `<div class="fld" data-f="${f.name}"><label for="${id}"><span class="lt">${esc(f.label)}</span>${f.req ? ' <i>*</i>' : ''}</label>${inp}${f.help ? `<small>${esc(f.help)}</small>` : ''}</div>`;
 }
@@ -124,7 +126,7 @@ function openForm(o) {
       ${o.sub ? `<p class="sheet-sub">${esc(o.sub)}</p>` : ''}
       <form id="frm" novalidate style="display:flex;flex-direction:column;min-height:0">
         <div class="sheet-b">${body}<div id="fhint" class="hintbox" hidden></div></div>
-        <div class="sheet-f"><button type="button" class="btn ghost" data-close>Batal</button>
+        <div class="sheet-f">${o.submit2 ? `<button type="button" class="btn soft" id="sub2">${esc(o.submit2)}</button>` : ''}<button type="button" class="btn ghost" data-close>Batal</button>
         <button type="submit" class="btn primary">${esc(o.submit || 'Simpan')}</button></div>
       </form></div>`;
   m.classList.add('open');
@@ -196,8 +198,7 @@ function openForm(o) {
   frm.addEventListener('change', upd);
   upd();
 
-  frm.addEventListener('submit', async e => {
-    e.preventDefault();
+  const doSubmit = async again => {
     frm.querySelectorAll('.fld.err').forEach(x => x.classList.remove('err'));
     const raw = read();
     let ok = true;
@@ -211,11 +212,14 @@ function openForm(o) {
     const v = convert(raw);
     if (v.unit === 'SHEET' && uf.some(f => v[f.name] != null && v[f.name] % 1 !== 0))
       return toast('Hasil sheet × isi per sheet harus bilangan bulat pcs. Periksa jumlah sheet dan isi per sheet.', 'err');
-    const btn = frm.querySelector('[type=submit]');
-    btn.disabled = true;
-    try { await o.onSubmit(v); closeModal(); }
-    catch (err) { toast(errMsg(err), 'err'); btn.disabled = false; }
-  });
+    const btns = [...frm.querySelectorAll('[type=submit],#sub2')];
+    btns.forEach(x => (x.disabled = true));
+    try { const r = await o.onSubmit(v, again); if (r !== 'keep') closeModal(); }
+    catch (err) { toast(errMsg(err), 'err'); btns.forEach(x => (x.disabled = false)); }
+  };
+  frm.addEventListener('submit', e => { e.preventDefault(); doSubmit(false); });
+  const s2 = $('#sub2', m);
+  if (s2) s2.onclick = () => doSubmit(true);
   const first = frm.querySelector('input:not([disabled]),select:not([disabled])');
   if (first && window.innerWidth > 700) first.focus();
 }
@@ -247,7 +251,19 @@ async function del(table, id) {
   if (!data || !data.length) throw new Error('Data tidak terhapus. Hanya Admin yang boleh menghapus.');
 }
 const fmtIn = (unit, input, pps) => unit === 'SHEET' ? `${num(input)} sheet × ${num(pps)} pcs` : 'PCS';
-const poLabel = p =>`${p.pi_no} · ${p.brand}${p.specification ? ' · ' + p.specification : ''}`;
+const itemLbl = p => [p.item_name, p.specification].filter(Boolean).join(' · ');
+const poLabel = p => `${p.pi_no} · ${p.brand}${itemLbl(p) ? ' · ' + itemLbl(p) : ''}`;
+const ITEM_NAMES = ['Booklet', 'Filter Book', 'Filter Cones', 'Display', 'Cover'];
+// urutkan agar item-item satu PI berdekatan (urutan PI = urutan pertama kali dibuat)
+const groupSort = rows => {
+  const first = {};
+  rows.forEach(r => { const k = r.pi_no + '|' + r.brand, t = String(r.created_at || ''); if (!(k in first) || t < first[k]) first[k] = t; });
+  return [...rows].sort((a, b) => {
+    const ka = a.pi_no + '|' + a.brand, kb = b.pi_no + '|' + b.brand;
+    if (ka !== kb) return first[ka] < first[kb] ? -1 : first[ka] > first[kb] ? 1 : (ka < kb ? -1 : 1);
+    return String(a.created_at || '').localeCompare(String(b.created_at || ''));
+  });
+};
 
 /* ---------- Table renderer ---------- */
 const bal = v => `<span class="bal ${v > 0 ? 'pos' : v < 0 ? 'neg' : 'zero'}">${num(v)}</span>`;
@@ -371,32 +387,41 @@ const UNIT_FIELDS = [
     showIf: v => v.unit === 'SHEET' }
 ];
 
-function poForm(row, rl) {
+function poForm(row, rl, pre) {
   const sheet = !!row && row.unit === 'SHEET';
+  const names = [...new Set([...ITEM_NAMES, ...(poForm.names || [])])];
   openForm({
-    title: row ? 'Ubah Data PI' : 'PI / PO Baru',
-    sub: 'Master PI yang akan diterima gudang. Jumlah disimpan dalam PCS.',
+    title: row ? 'Ubah Item PI' : (pre ? `Tambah Item · PI ${pre.pi_no}` : 'PI / PO Baru'),
+    sub: 'Satu PI bisa punya banyak jenis barang (Booklet, Filter Book, Filter Cones, Display, Cover, dll). Isi satu item per jenis barang. Jumlah disimpan dalam PCS.',
     fields: [
       { name: 'pi_no', label: 'PI No', req: true, placeholder: 'mis. 210.07.26.SMB' },
       { name: 'brand', label: 'Brand', req: true, placeholder: 'mis. SB BROWN + TIPS' },
-      { name: 'specification', label: 'Spesifikasi Incoming Material', placeholder: 'mis. Filter / Paper / Tipping' },
+      { name: 'item_name', label: 'Jenis Barang', req: true, list: names, placeholder: 'pilih atau ketik, mis. Booklet' },
+      { name: 'specification', label: 'Spesifikasi Incoming Material', placeholder: 'mis. ukuran / gramasi / warna (boleh kosong)' },
       ...UNIT_FIELDS,
       { name: 'qty_po', label: 'Qty PO', type: 'number', req: true, min: 0.01, u: true }
     ],
-    values: row ? { ...row, pps: row.pcs_per_sheet, qty_po: sheet ? row.qty_po_input : row.qty_po } : null,
+    values: row ? { ...row, pps: row.pcs_per_sheet, qty_po: sheet ? row.qty_po_input : row.qty_po } : (pre || null),
     keepUnit: !!row,
-    onSubmit: async v => {
+    submit2: row ? null : 'Simpan & Tambah Item Lain di PI Ini',
+    onSubmit: async (v, again) => {
       await save('po_items', {
-        pi_no: v.pi_no, brand: v.brand, specification: v.specification || '',
+        pi_no: v.pi_no, brand: v.brand, item_name: v.item_name, specification: v.specification || '',
         qty_po: v.qty_po, unit: v.unit, pcs_per_sheet: v.unit === 'SHEET' ? v.pps : null, qty_po_input: v.raw.qty_po
       }, row?.id);
-      toast('PI tersimpan'); rl();
+      toast(again ? 'Item tersimpan. Isi item berikutnya.' : 'Item PI tersimpan');
+      rl();
+      if (again) {
+        poForm.names = [...new Set([...(poForm.names || []), v.item_name])];
+        poForm(null, rl, { pi_no: v.pi_no, brand: v.brand });
+        return 'keep';
+      }
     }
   });
 }
 
 async function receiptForm(row, rl) {
-  const pos = await q('v_po_summary');
+  const pos = groupSort(await q('v_po_summary'));
   if (!pos.length) return toast('Buat data PI terlebih dahulu di tab "Data PI".', 'err');
   const by = Object.fromEntries(pos.map(p => [p.id, p]));
   const sheet = !!row && row.unit === 'SHEET';
@@ -446,7 +471,7 @@ async function qcForm(row, pre, rl) {
     sub: 'Total Good + NG tidak boleh melebihi Qty SJ. Boleh diisi dalam sheet atau pcs.',
     fields: [
       { name: 'receipt_id', label: 'Surat Jalan yang Dicek', type: 'select', req: true, disabled: !!row,
-        options: list.map(r => ({ v: r.id, l: `${r.pi_no} · ${r.brand} · SJ ${r.sj_no} (sisa ${num(r.qc_balance)} pcs)` })) },
+        options: list.map(r => ({ v: r.id, l: `${poLabel(r)} · SJ ${r.sj_no} (sisa ${num(r.qc_balance)} pcs)` })) },
       { name: 'inspect_date', label: 'Tanggal Cek', type: 'date', req: true, default: today() },
       ...UNIT_FIELDS,
       { name: 'good_qty', label: 'Good Material', type: 'number', default: 0, half: true, u: true },
@@ -480,7 +505,7 @@ async function qcForm(row, pre, rl) {
 }
 
 async function issueForm(row, rl) {
-  const pos = await q('v_po_summary');
+  const pos = groupSort(await q('v_po_summary'));
   const list = row ? pos.filter(p => p.id === row.po_item_id) : pos.filter(p => Number(p.stock_ready) > 0);
   if (!list.length) return toast('Belum ada material GOOD yang siap dikirim. Selesaikan QC terlebih dahulu.', 'err');
   const by = Object.fromEntries(list.map(p => [p.id, p]));
@@ -527,7 +552,7 @@ async function returnForm(row, pre, rl) {
     title: row ? 'Ubah Retur' : 'Retur Material dari Produksi',
     fields: [
       { name: 'issue_id', label: 'Pengiriman', type: 'select', req: true, disabled: !!row,
-        options: list.map(i => ({ v: i.id, l: `${i.pi_no} · ${i.brand} · kirim ${dt(i.request_date)} (sisa ${num(i.balance)} pcs)` })) },
+        options: list.map(i => ({ v: i.id, l: `${poLabel(i)} · kirim ${dt(i.request_date)} (sisa ${num(i.balance)} pcs)` })) },
       ...UNIT_FIELDS,
       { name: 'return_date', label: 'Tanggal Retur', type: 'date', req: true, default: today(), half: true },
       { name: 'qty_return', label: 'Qty Retur', type: 'number', req: true, min: 0.01, half: true, u: true },
@@ -555,7 +580,7 @@ async function returnForm(row, pre, rl) {
 }
 
 async function fgForm(row, rl) {
-  const pos = await q('v_po_summary');
+  const pos = groupSort(await q('v_po_summary'));
   const list = row ? pos.filter(p => p.id === row.po_item_id) : pos.filter(p => Number(p.supplied_total) > 0);
   if (!list.length) return toast('Belum ada material yang dikirim ke produksi.', 'err');
   const by = Object.fromEntries(list.map(p => [p.id, p]));
@@ -605,7 +630,7 @@ const DEFS = {
           .map(r => ({ ...r, sj_input: fmtIn(r.unit, r.qty_input, r.pcs_per_sheet) })),
         cols: [
           { label: 'Tanggal', k: 'receipt_date', t: 'd' }, { label: 'PI No', k: 'pi_no', cls: 'strong' },
-          { label: 'Brand', k: 'brand' }, { label: 'Spesifikasi', k: 'specification' },
+          { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' }, { label: 'Spesifikasi', k: 'specification' },
           { label: 'Qty PO', k: 'qty_po', t: 'n', cls: 'num' }, { label: 'No. SJ / DO', k: 'sj_no' },
           { label: 'Satuan SJ', k: 'sj_input' }, { label: 'Qty SJ (pcs)', k: 'qty_sj', t: 'n', cls: 'num' }, { label: 'Status QC', f: qcStatus }
         ],
@@ -614,14 +639,19 @@ const DEFS = {
       },
       {
         id: 'po', label: 'Data PI',
-        load: async () => (await q('v_po_summary')).map(p => ({ ...p, po_input: fmtIn(p.unit, p.qty_po_input, p.pcs_per_sheet) })),
+        load: async () => {
+          const rows = groupSort(await q('v_po_summary'));
+          poForm.names = [...new Set(rows.map(p => p.item_name).filter(Boolean))];
+          return rows.map(p => ({ ...p, po_input: fmtIn(p.unit, p.qty_po_input, p.pcs_per_sheet) }));
+        },
         cols: [
-          { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Spesifikasi', k: 'specification' },
+          { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' }, { label: 'Spesifikasi', k: 'specification' },
           { label: 'Satuan PO', k: 'po_input' }, { label: 'Qty PO (pcs)', k: 'qty_po', t: 'n', cls: 'num' }, { label: 'Total Incoming', k: 'total_incoming', t: 'n', cls: 'num' },
           { label: 'Balance', k: 'balance_po', t: 'b', cls: 'num' }
         ],
-        add: { label: 'PI Baru', stage: 'gudang', run: rl => poForm(null, rl) },
-        acts: stdActs('po_items', 'gudang', (r, rl) => poForm(r, rl))
+        add: { label: 'PI / Item Baru', stage: 'gudang', run: rl => poForm(null, rl) },
+        acts: r => (can('gudang') ? [{ key: 'item', label: '+ Item', icon: 'plus', text: true, run: rl => poForm(null, rl, { pi_no: r.pi_no, brand: r.brand }) }] : [])
+          .concat(stdActs('po_items', 'gudang', (x, rl) => poForm(x, rl))(r))
       }
     ]
   }),
@@ -634,7 +664,7 @@ const DEFS = {
         id: 'wait', label: 'Menunggu QC',
         load: async () => (await q('v_receipts', [['receipt_date', true], ['created_at', true]])).filter(r => Number(r.qc_balance) > 0),
         cols: [
-          { label: 'Tgl Terima', k: 'receipt_date', t: 'd' }, { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' },
+          { label: 'Tgl Terima', k: 'receipt_date', t: 'd' }, { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' },
           { label: 'No. SJ / DO', k: 'sj_no' }, { label: 'Qty SJ', k: 'qty_sj', t: 'n', cls: 'num' },
           { label: 'Good', k: 'good_qty', t: 'n', cls: 'num' }, { label: 'NG', k: 'ng_qty', t: 'n', cls: 'num' },
           { label: 'Sisa Dicek', k: 'qc_balance', t: 'b', cls: 'num' }
@@ -645,7 +675,7 @@ const DEFS = {
         id: 'hist', label: 'Riwayat QC',
         load: () => q('v_qc_inspections', [['inspect_date', false], ['created_at', false]]),
         cols: [
-          { label: 'Tgl Cek', k: 'inspect_date', t: 'd' }, { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' },
+          { label: 'Tgl Cek', k: 'inspect_date', t: 'd' }, { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' },
           { label: 'No. SJ / DO', k: 'sj_no' }, { label: 'Qty SJ', k: 'qty_sj', t: 'n', cls: 'num' },
           { label: 'Good', k: 'good_qty', t: 'n', cls: 'num' }, { label: 'NG', k: 'ng_qty', t: 'n', cls: 'num' },
           { label: 'Keterangan', k: 'description' }
@@ -656,7 +686,7 @@ const DEFS = {
         id: 'all', label: 'Semua SJ',
         load: () => q('v_receipts', [['receipt_date', false], ['created_at', false]]),
         cols: [
-          { label: 'Tgl Terima', k: 'receipt_date', t: 'd' }, { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' },
+          { label: 'Tgl Terima', k: 'receipt_date', t: 'd' }, { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' },
           { label: 'No. SJ / DO', k: 'sj_no' }, { label: 'Qty SJ', k: 'qty_sj', t: 'n', cls: 'num' },
           { label: 'Good', k: 'good_qty', t: 'n', cls: 'num' }, { label: 'NG', k: 'ng_qty', t: 'n', cls: 'num' },
           { label: 'Status', f: qcStatus }
@@ -674,7 +704,7 @@ const DEFS = {
         id: 'issue', label: 'Pengiriman',
         load: () => q('v_supply_issues', [['request_date', false], ['created_at', false]]),
         cols: [
-          { label: 'Tgl Request', k: 'request_date', t: 'd' }, { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' },
+          { label: 'Tgl Request', k: 'request_date', t: 'd' }, { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' },
           { label: 'Spesifikasi', k: 'specification' }, { label: 'Qty Dikirim', k: 'qty_sent', t: 'n', cls: 'num' },
           { label: 'Qty Retur', k: 'returned_qty', t: 'n', cls: 'num' }, { label: 'Balance', k: 'balance', t: 'b', cls: 'num' }
         ],
@@ -689,7 +719,7 @@ const DEFS = {
         id: 'ret', label: 'Retur',
         load: () => q('v_supply_returns', [['return_date', false], ['created_at', false]]),
         cols: [
-          { label: 'Tgl Retur', k: 'return_date', t: 'd' }, { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' },
+          { label: 'Tgl Retur', k: 'return_date', t: 'd' }, { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' },
           { label: 'Tgl Request', k: 'request_date', t: 'd' }, { label: 'Qty Dikirim', k: 'qty_sent', t: 'n', cls: 'num' },
           { label: 'Qty Retur', k: 'qty_return', t: 'n', cls: 'num' }, { label: 'Catatan', k: 'notes' }
         ],
@@ -700,7 +730,7 @@ const DEFS = {
         id: 'stock', label: 'Stok Siap Kirim',
         load: async () => (await q('v_po_summary', [['pi_no', true]])).filter(p => Number(p.good_total) > 0),
         cols: [
-          { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Spesifikasi', k: 'specification' },
+          { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' }, { label: 'Spesifikasi', k: 'specification' },
           { label: 'Good (QC)', k: 'good_total', t: 'n', cls: 'num' }, { label: 'Dikirim', k: 'supplied_total', t: 'n', cls: 'num' },
           { label: 'Retur', k: 'returned_total', t: 'n', cls: 'num' }, { label: 'Stok Siap Kirim', k: 'stock_ready', t: 'b', cls: 'num' }
         ],
@@ -717,7 +747,7 @@ const DEFS = {
         id: 'fg', label: 'Penerimaan FG',
         load: () => q('v_fg_receipts', [['received_date', false], ['created_at', false]]),
         cols: [
-          { label: 'Tgl Terima', k: 'received_date', t: 'd' }, { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' },
+          { label: 'Tgl Terima', k: 'received_date', t: 'd' }, { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' },
           { label: 'Karton', k: 'karton', t: 'n', cls: 'num' }, { label: 'Display', k: 'display', t: 'n', cls: 'num' },
           { label: 'Booklet / Cones', k: 'booklet_cones', t: 'n', cls: 'num' }, { label: 'Catatan', k: 'notes' }
         ],
@@ -728,7 +758,7 @@ const DEFS = {
         id: 'bal', label: 'Saldo per PI',
         load: async () => (await q('v_po_summary', [['pi_no', true]])).filter(p => Number(p.supplied_total) > 0),
         cols: [
-          { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' },
+          { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' },
           { label: 'Material di Produksi', k: 'at_production', t: 'n', cls: 'num' },
           { label: 'Karton', k: 'fg_karton', t: 'n', cls: 'num' }, { label: 'Display', k: 'fg_display', t: 'n', cls: 'num' },
           { label: 'Booklet / Cones', k: 'fg_booklet', t: 'n', cls: 'num' }, { label: 'Balance', k: 'fg_balance', t: 'b', cls: 'num' }
@@ -784,10 +814,17 @@ async function renderSegPage(view, def) {
 }
 
 /* ---------- Dashboard ---------- */
+function groupHTML(rows) {
+  const g = new Map();
+  groupSort(rows).forEach(r => { const k = r.pi_no + '|' + r.brand; if (!g.has(k)) g.set(k, []); g.get(k).push(r); });
+  return [...g.values()].map(items => `<section class="pi-group"><div class="pi-head"><b>PI ${esc(items[0].pi_no)}</b><span>${esc(items[0].brand)}</span><em>${items.length} item</em></div>
+    <div class="po-grid">${items.map(poCard).join('')}</div></section>`).join('');
+}
+
 function poCard(p) {
   const pct = Number(p.qty_po) ? Math.min(100, Number(p.total_incoming) / Number(p.qty_po) * 100) : 0;
   return `<div class="po">
-    <div class="po-h"><div><b>${esc(p.pi_no)}</b><small>${esc(p.brand)}${p.specification ? ' · ' + esc(p.specification) : ''}</small></div>
+    <div class="po-h"><div><b>${esc(p.item_name || p.specification || p.pi_no)}</b><small>PI ${esc(p.pi_no)}${p.item_name && p.specification ? ' · ' + esc(p.specification) : ''}</small></div>
       <div>${Number(p.balance_po) > 0 ? `<span class="pill warn">Sisa PO ${num(p.balance_po)}</span>` : Number(p.balance_po) < 0 ? `<span class="pill err">Lebih ${num(-p.balance_po)}</span>` : '<span class="pill ok">PO lengkap</span>'}</div></div>
     <div class="stages">
       <div class="st g"><em>Gudang</em><strong>${num(p.total_incoming)}</strong><div class="bar"><i style="width:${pct}%"></i></div><small>dari PO ${num(p.qty_po)}</small></div>
@@ -800,7 +837,7 @@ function poCard(p) {
 /* ---------- Laporan Tabel (format Excel: 1 tabel panjang) ---------- */
 const REPORT = [
   { g: 'INCOMING MATERIAL DATA', c: 'g', cols: [
-    { k: 'no', l: 'NO', w: 6, t: 'x' }, { k: 'pi_no', l: 'PI. NO', w: 18, t: 'x' }, { k: 'brand', l: 'BRAND', w: 22, t: 'x', al: 'left' },
+    { k: 'no', l: 'NO', w: 6, t: 'x' }, { k: 'pi_no', l: 'PI. NO', w: 18, t: 'x' }, { k: 'brand', l: 'BRAND', w: 22, t: 'x', al: 'left' }, { k: 'item', l: 'JENIS BARANG', w: 18, t: 'x', al: 'left' },
     { k: 'spec', l: 'SPESIFIKASI INCOMING MATERIAL', w: 26, t: 'x', al: 'left' }, { k: 'qty_po', l: 'QTY PO', w: 12, t: 'n' },
     { k: 'sj_no', l: 'NO. SJ / DO. NO', w: 18, t: 'x' }, { k: 'sj_input', l: 'SATUAN SJ', w: 22, t: 'x' }, { k: 'qty_sj', l: 'QTY SJ (PCS)', w: 13, t: 'n' },
     { k: 'total_in', l: 'TOTAL INCOMING MATERIAL', w: 17, t: 'n' }, { k: 'bal_po', l: 'BALANCE', w: 12, t: 'b' }] },
@@ -829,13 +866,17 @@ async function loadReport() {
   const recBy = by(recs, 'po_item_id'), issBy = by(iss, 'po_item_id'), fgBy = by(fgs, 'po_item_id');
   const qcBy = by(qcs, 'receipt_id'), retBy = by(rets, 'issue_id');
   const out = [];
-  pos.forEach((p, pi) => {
+  let piNo = 0, lastKey = null;
+  groupSort(pos).forEach(p => {
+    const key = p.pi_no + '|' + p.brand, newPi = key !== lastKey;
+    if (newPi) piNo++;
+    lastKey = key;
     const R = recBy[p.id] || [], I = issBy[p.id] || [], F = fgBy[p.id] || [];
     const n = Math.max(R.length, I.length, F.length, 1);
     let cum = 0, cumBook = 0;
     for (let i = 0; i < n; i++) {
       const r = R[i], s = I[i], f = F[i];
-      const row = { no: i === 0 ? pi + 1 : null, pi_no: p.pi_no, brand: p.brand, spec: p.specification,
+      const row = { no: i === 0 && newPi ? piNo : null, newPi: i === 0 && newPi, pi_no: p.pi_no, brand: p.brand, item: p.item_name, spec: p.specification,
         qty_po: i === 0 ? p.qty_po : null, first: i === 0 };
       if (r) {
         cum += Number(r.qty_sj);
@@ -871,8 +912,8 @@ function reportTable(rows) {
   return `<div class="rpt-wrap"><table class="rpt"><thead>
     <tr>${REPORT.map(g => `<th colspan="${g.cols.length}" class="g-${g.c}">${g.g}</th>`).join('')}</tr>
     <tr>${REPORT.flatMap(g => g.cols).map(c => `<th>${c.l}</th>`).join('')}</tr></thead><tbody>${
-    rows.map(r => `<tr class="${r.first ? 'first' : ''}">${REPORT.flatMap(g => g.cols).map(c =>
-      `<td class="${c.al === 'left' ? 'l' : ''}${!r.first && ['pi_no', 'brand', 'spec'].includes(c.k) ? ' dim' : ''}">${cellH(c, r[c.k], r)}</td>`).join('')}</tr>`).join('')
+    rows.map(r => `<tr class="${r.first ? 'first' : ''}${r.newPi ? ' pigrp' : ''}">${REPORT.flatMap(g => g.cols).map(c =>
+      `<td class="${c.al === 'left' ? 'l' : ''}${!r.first && ['pi_no', 'brand', 'item', 'spec'].includes(c.k) ? ' dim' : ''}">${cellH(c, r[c.k], r)}</td>`).join('')}</tr>`).join('')
   }</tbody></table></div>`;
 }
 
@@ -904,6 +945,7 @@ async function exportReportXLSX(rows) {
   rows.forEach((r, i) => {
     const row = ws.getRow(5 + i);
     flat.forEach((c, j) => xlDataCell(row.getCell(j + 1), c, r[c.k], i % 2 === 0));
+    if (r.newPi) flat.forEach((c, j) => { const cell = row.getCell(j + 1); cell.border = { ...cell.border, top: { style: 'medium', color: { argb: 'FF000000' } } }; });
   });
   ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4, column: N } };
   ws.pageSetup = { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: '3:4' };
@@ -921,7 +963,7 @@ async function renderReport(body) {
   let cur = rows;
   const draw = () => {
     const k = $('#rq').value.trim().toLowerCase();
-    cur = k ? rows.filter(r => [r.pi_no, r.brand, r.spec, r.sj_no].join(' ').toLowerCase().includes(k)) : rows;
+    cur = k ? rows.filter(r => [r.pi_no, r.brand, r.item, r.spec, r.sj_no].join(' ').toLowerCase().includes(k)) : rows;
     $('#rtbl').innerHTML = reportTable(cur);
     $('#rcnt').textContent = cur.length + ' baris';
   };
@@ -949,17 +991,17 @@ async function renderSummary(view) {
   let rows;
   try { rows = await q('v_po_summary'); } catch (e) { view.insertAdjacentHTML('beforeend', ''); view.querySelector('.loading').outerHTML = `<div class="errbox">${esc(errMsg(e))}</div>`; return; }
   const sum = k => rows.reduce((a, r) => a + Number(r[k] || 0), 0);
-  const kp = [['Total PI', rows.length, 'g'], ['Total Incoming', num(sum('total_incoming')), 'g'], ['Menunggu QC', num(sum('qc_pending')), 'q'],
+  const kp = [['Total PI', new Set(rows.map(r => r.pi_no + '|' + r.brand)).size, 'g'], ['Total Incoming', num(sum('total_incoming')), 'g'], ['Menunggu QC', num(sum('qc_pending')), 'q'],
     ['Good', num(sum('good_total')), 'q'], ['NG', num(sum('ng_total')), 'r'], ['Stok Siap Kirim', num(sum('stock_ready')), 's'],
     ['Di Produksi', num(sum('at_production')), 's'], ['Booklet / Cones Jadi', num(sum('fg_booklet')), 'f']];
   view.querySelector('.loading').outerHTML = `
     <div class="kpis">${kp.map(([l, v, c]) => `<div class="kpi ${c}"><span>${l}</span><b>${v}</b></div>`).join('')}</div>
     <div class="toolbar"><div class="search">${icon('search', 18)}<input id="q" type="search" placeholder="Cari PI / brand…"></div></div>
-    <div class="sec-title">Progres per PI</div><div id="pos" class="po-grid"></div>`;
+    <div class="sec-title">Progres per PI</div><div id="pos"></div>`;
   const draw = () => {
     const k = $('#q').value.trim().toLowerCase();
-    const f = k ? rows.filter(r => [r.pi_no, r.brand, r.specification].join(' ').toLowerCase().includes(k)) : rows;
-    $('#pos').innerHTML = f.length ? f.map(poCard).join('') : '<div class="empty" style="grid-column:1/-1"><b>Belum ada data PI</b>Leader Gudang dapat menambah PI di menu Gudang.</div>';
+    const f = k ? rows.filter(r => [r.pi_no, r.brand, r.item_name, r.specification].join(' ').toLowerCase().includes(k)) : rows;
+    $('#pos').innerHTML = f.length ? groupHTML(f) : '<div class="empty" style="grid-column:1/-1"><b>Belum ada data PI</b>Leader Gudang dapat menambah PI di menu Gudang.</div>';
   };
   $('#q').oninput = draw; draw();
 }
