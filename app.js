@@ -97,7 +97,7 @@ function fieldHTML(f, val) {
   const dis = f.disabled ? 'disabled' : '';
   let inp;
   if (f.type === 'select') {
-    inp = `<select id="${id}" name="${f.name}" ${dis}><option value="">— Pilih —</option>${f.options.map(o =>
+    inp = `<select id="${id}" name="${f.name}" ${dis}>${f.noEmpty ? '' : '<option value="">— Pilih —</option>'}${f.options.map(o =>
       `<option value="${esc(o.v)}" ${String(o.v) === String(v) ? 'selected' : ''}>${esc(o.l)}</option>`).join('')}</select>`;
   } else if (f.type === 'textarea') {
     inp = `<textarea id="${id}" name="${f.name}" rows="3" placeholder="${esc(f.placeholder || '')}" ${dis}>${esc(v)}</textarea>`;
@@ -105,7 +105,7 @@ function fieldHTML(f, val) {
     const n = f.type === 'number' ? `inputmode="decimal" step="any" min="${f.min ?? 0}"` : '';
     inp = `<input id="${id}" name="${f.name}" type="${f.type || 'text'}" value="${esc(v)}" ${n} placeholder="${esc(f.placeholder || '')}" autocomplete="off" ${dis}>`;
   }
-  return `<div class="fld" data-f="${f.name}"><label for="${id}">${esc(f.label)}${f.req ? ' <i>*</i>' : ''}</label>${inp}${f.help ? `<small>${esc(f.help)}</small>` : ''}</div>`;
+  return `<div class="fld" data-f="${f.name}"><label for="${id}"><span class="lt">${esc(f.label)}</span>${f.req ? ' <i>*</i>' : ''}</label>${inp}${f.help ? `<small>${esc(f.help)}</small>` : ''}</div>`;
 }
 
 function openForm(o) {
@@ -132,6 +132,9 @@ function openForm(o) {
   m.onclick = e => { if (e.target.closest('[data-close]')) closeModal(); };
 
   const frm = $('#frm', m);
+  const uf = o.fields.filter(f => f.u);          // kolom jumlah yang ikut satuan (PCS / SHEET)
+  let touched = !!o.keepUnit, auto = null, extra = '';
+
   const read = () => {
     const v = {};
     o.fields.forEach(f => {
@@ -144,12 +147,51 @@ function openForm(o) {
     });
     return v;
   };
-  const hint = (html, type = 'info') => {
-    const h = $('#fhint', m);
-    if (!html) { h.hidden = true; return; }
-    h.hidden = false; h.className = 'hintbox ' + type; h.innerHTML = html;
+  // Konversi ke PCS: jumlah sheet x isi per sheet. Handler menerima nilai dalam PCS; nilai ketikan asli ada di v.raw
+  const convert = raw => {
+    const v = { ...raw, raw };
+    v.unit = raw.unit || 'PCS';
+    if (v.unit === 'SHEET') {
+      const k = Number(raw.pps);
+      uf.forEach(f => { v[f.name] = raw[f.name] == null ? null : (k > 0 ? Math.round(raw[f.name] * k * 100) / 100 : null); });
+    }
+    return v;
   };
-  const upd = () => o.onInput && o.onInput(read(), hint);
+  const convLine = v => v.unit !== 'SHEET' ? '' : uf
+    .filter(f => v.raw[f.name] != null && v.raw[f.name] > 0 && v[f.name] != null)
+    .map(f => `${esc(f.label)}: ${num(v.raw[f.name])} sheet × ${num(v.raw.pps)} = <b>${num(v[f.name])} pcs</b>` + (v[f.name] % 1 ? ' ⚠ bukan bilangan bulat' : ''))
+    .join('<br>');
+  const show = (html, type = 'info') => {
+    const h = $('#fhint', m);
+    const t = (html || '') + (html && extra ? '<br>' : '') + extra;
+    if (!t) { h.hidden = true; return; }
+    h.hidden = false; h.className = 'hintbox ' + type; h.innerHTML = t;
+  };
+  const upd = ev => {
+    if (ev && ev.target && ev.target.name === 'unit') touched = true;   // diubah manual oleh pengguna
+    let raw = read();
+    // satuan & isi per sheet otomatis mengikuti PI / SJ yang dipilih (selama belum diubah manual)
+    if (o.unitFrom && !touched && frm.elements.unit) {
+      const u = o.unitFrom(raw);
+      if (u && frm.elements.unit.value !== u) { frm.elements.unit.value = u; raw = read(); }
+    }
+    if (raw.unit === 'SHEET' && o.ppsFrom && frm.elements.pps) {
+      const d = o.ppsFrom(raw), el = frm.elements.pps;
+      if (d != null && (el.value === '' || (auto != null && Number(el.value) === auto))) { el.value = d; auto = Number(d); raw = read(); }
+    }
+    o.fields.forEach(f => {
+      if (f.showIf) { const w = frm.querySelector(`[data-f="${f.name}"]`); if (w) w.hidden = !f.showIf(raw); }
+    });
+    uf.forEach(f => {
+      const w = frm.querySelector(`[data-f="${f.name}"] .lt`);
+      if (w) w.textContent = f.label + (raw.unit === 'SHEET' ? ' (sheet)' : ' (pcs)');
+    });
+    const v = convert(raw);
+    extra = convLine(v);
+    let called = false;
+    if (o.onInput) o.onInput(v, (h, t) => { called = true; show(h, t); });
+    if (!called) show('');
+  };
   frm.addEventListener('input', upd);
   frm.addEventListener('change', upd);
   upd();
@@ -157,14 +199,18 @@ function openForm(o) {
   frm.addEventListener('submit', async e => {
     e.preventDefault();
     frm.querySelectorAll('.fld.err').forEach(x => x.classList.remove('err'));
-    const v = read();
+    const raw = read();
     let ok = true;
     o.fields.forEach(f => {
-      const bad = (f.req && (v[f.name] == null)) ||
-        (f.type === 'number' && v[f.name] != null && (isNaN(v[f.name]) || v[f.name] < (f.min ?? 0)));
+      if (f.showIf && !f.showIf(raw)) return;
+      const bad = (f.req && (raw[f.name] == null)) ||
+        (f.type === 'number' && raw[f.name] != null && (isNaN(raw[f.name]) || raw[f.name] < (f.min ?? 0)));
       if (bad) { ok = false; frm.querySelector(`[data-f="${f.name}"]`)?.classList.add('err'); }
     });
     if (!ok) return toast('Lengkapi data yang wajib diisi dengan benar', 'err');
+    const v = convert(raw);
+    if (v.unit === 'SHEET' && uf.some(f => v[f.name] != null && v[f.name] % 1 !== 0))
+      return toast('Hasil sheet × isi per sheet harus bilangan bulat pcs. Periksa jumlah sheet dan isi per sheet.', 'err');
     const btn = frm.querySelector('[type=submit]');
     btn.disabled = true;
     try { await o.onSubmit(v); closeModal(); }
@@ -200,7 +246,8 @@ async function del(table, id) {
   if (error) throw error;
   if (!data || !data.length) throw new Error('Data tidak terhapus. Hanya Admin yang boleh menghapus.');
 }
-const poLabel = p => `${p.pi_no} · ${p.brand}${p.specification ? ' · ' + p.specification : ''}`;
+const fmtIn = (unit, input, pps) => unit === 'SHEET' ? `${num(input)} sheet × ${num(pps)} pcs` : 'PCS';
+const poLabel = p =>`${p.pi_no} · ${p.brand}${p.specification ? ' · ' + p.specification : ''}`;
 
 /* ---------- Table renderer ---------- */
 const bal = v => `<span class="bal ${v > 0 ? 'pos' : v < 0 ? 'neg' : 'zero'}">${num(v)}</span>`;
@@ -316,19 +363,33 @@ const stdActs = (table_, stage, edit) => r => {
 /* =====================================================================
    FORMS
    ===================================================================== */
+// Satuan input: PCS atau SHEET (1 sheet berisi beberapa pcs). Semua angka disimpan dalam PCS.
+const UNIT_FIELDS = [
+  { name: 'unit', label: 'Satuan Input', type: 'select', noEmpty: true, default: 'PCS', half: true,
+    options: [{ v: 'PCS', l: 'PCS' }, { v: 'SHEET', l: 'SHEET' }] },
+  { name: 'pps', label: 'Isi per Sheet (pcs)', type: 'number', min: 0.01, req: true, half: true, placeholder: 'mis. 6',
+    showIf: v => v.unit === 'SHEET' }
+];
+
 function poForm(row, rl) {
+  const sheet = !!row && row.unit === 'SHEET';
   openForm({
     title: row ? 'Ubah Data PI' : 'PI / PO Baru',
-    sub: 'Master PI yang akan diterima gudang.',
+    sub: 'Master PI yang akan diterima gudang. Jumlah disimpan dalam PCS.',
     fields: [
       { name: 'pi_no', label: 'PI No', req: true, placeholder: 'mis. 210.07.26.SMB' },
       { name: 'brand', label: 'Brand', req: true, placeholder: 'mis. SB BROWN + TIPS' },
       { name: 'specification', label: 'Spesifikasi Incoming Material', placeholder: 'mis. Filter / Paper / Tipping' },
-      { name: 'qty_po', label: 'Qty PO', type: 'number', req: true, min: 0.01 }
+      ...UNIT_FIELDS,
+      { name: 'qty_po', label: 'Qty PO', type: 'number', req: true, min: 0.01, u: true }
     ],
-    values: row,
+    values: row ? { ...row, pps: row.pcs_per_sheet, qty_po: sheet ? row.qty_po_input : row.qty_po } : null,
+    keepUnit: !!row,
     onSubmit: async v => {
-      await save('po_items', { pi_no: v.pi_no, brand: v.brand, specification: v.specification || '', qty_po: v.qty_po }, row?.id);
+      await save('po_items', {
+        pi_no: v.pi_no, brand: v.brand, specification: v.specification || '',
+        qty_po: v.qty_po, unit: v.unit, pcs_per_sheet: v.unit === 'SHEET' ? v.pps : null, qty_po_input: v.raw.qty_po
+      }, row?.id);
       toast('PI tersimpan'); rl();
     }
   });
@@ -338,17 +399,22 @@ async function receiptForm(row, rl) {
   const pos = await q('v_po_summary');
   if (!pos.length) return toast('Buat data PI terlebih dahulu di tab "Data PI".', 'err');
   const by = Object.fromEntries(pos.map(p => [p.id, p]));
+  const sheet = !!row && row.unit === 'SHEET';
   openForm({
     title: row ? 'Ubah Penerimaan' : 'Penerimaan Material Baru',
-    sub: 'Catat barang masuk berdasarkan Surat Jalan / DO.',
+    sub: 'Catat barang masuk berdasarkan Surat Jalan / DO. Bila barang berbentuk sheet, pilih satuan SHEET.',
     fields: [
       { name: 'po_item_id', label: 'PI / Material', type: 'select', req: true, disabled: !!row, options: pos.map(p => ({ v: p.id, l: poLabel(p) })) },
       { name: 'receipt_date', label: 'Tanggal Terima', type: 'date', req: true, default: today(), half: true },
       { name: 'sj_no', label: 'No. SJ / DO', req: true, half: true },
-      { name: 'qty_sj', label: 'Qty SJ', type: 'number', req: true, min: 0.01 },
+      ...UNIT_FIELDS,
+      { name: 'qty_sj', label: 'Qty SJ', type: 'number', req: true, min: 0.01, u: true },
       { name: 'notes', label: 'Catatan', type: 'textarea' }
     ],
-    values: row,
+    values: row ? { ...row, pps: row.pcs_per_sheet, qty_sj: sheet ? row.qty_input : row.qty_sj } : null,
+    keepUnit: !!row,
+    unitFrom: v => by[v.po_item_id]?.unit,
+    ppsFrom: v => by[v.po_item_id]?.pcs_per_sheet,
     onInput: (v, hint) => {
       const p = by[v.po_item_id];
       if (!p) return hint();
@@ -356,11 +422,14 @@ async function receiptForm(row, rl) {
       const sisa = Number(p.qty_po) - used;
       const after = v.qty_sj != null ? sisa - v.qty_sj : null;
       const over = after != null && after < 0;
-      hint(`Qty PO <b>${num(p.qty_po)}</b> · Sudah masuk <b>${num(used)}</b> · Sisa PO <b>${num(sisa)}</b>` +
-        (over ? `<br>⚠ Melebihi sisa PO sebanyak ${num(-after)} (tetap bisa disimpan bila memang kirim lebih).` : ''), over ? 'warn' : 'info');
+      hint(`Qty PO <b>${num(p.qty_po)}</b> · Sudah masuk <b>${num(used)}</b> · Sisa PO <b>${num(sisa)}</b> (pcs)` +
+        (over ? `<br>⚠ Melebihi sisa PO sebanyak ${num(-after)} pcs (tetap bisa disimpan bila memang kirim lebih).` : ''), over ? 'warn' : 'info');
     },
     onSubmit: async v => {
-      await save('receipts', { po_item_id: v.po_item_id, receipt_date: v.receipt_date, sj_no: v.sj_no, qty_sj: v.qty_sj, notes: v.notes }, row?.id);
+      await save('receipts', {
+        po_item_id: v.po_item_id, receipt_date: v.receipt_date, sj_no: v.sj_no, qty_sj: v.qty_sj,
+        unit: v.unit, pcs_per_sheet: v.unit === 'SHEET' ? v.pps : null, qty_input: v.raw.qty_sj, notes: v.notes
+      }, row?.id);
       toast('Penerimaan tersimpan'); rl();
     }
   });
@@ -374,30 +443,35 @@ async function qcForm(row, pre, rl) {
   const own = row ? Number(row.good_qty) + Number(row.ng_qty) : 0;
   openForm({
     title: row ? 'Ubah Hasil QC' : 'Input Hasil QC',
-    sub: 'Total Good + NG tidak boleh melebihi Qty SJ.',
+    sub: 'Total Good + NG tidak boleh melebihi Qty SJ. Boleh diisi dalam sheet atau pcs.',
     fields: [
       { name: 'receipt_id', label: 'Surat Jalan yang Dicek', type: 'select', req: true, disabled: !!row,
-        options: list.map(r => ({ v: r.id, l: `${r.pi_no} · ${r.brand} · SJ ${r.sj_no} (sisa ${num(r.qc_balance)})` })) },
+        options: list.map(r => ({ v: r.id, l: `${r.pi_no} · ${r.brand} · SJ ${r.sj_no} (sisa ${num(r.qc_balance)} pcs)` })) },
       { name: 'inspect_date', label: 'Tanggal Cek', type: 'date', req: true, default: today() },
-      { name: 'good_qty', label: 'Good Material', type: 'number', default: 0, half: true },
-      { name: 'ng_qty', label: 'NG Material', type: 'number', default: 0, half: true },
+      ...UNIT_FIELDS,
+      { name: 'good_qty', label: 'Good Material', type: 'number', default: 0, half: true, u: true },
+      { name: 'ng_qty', label: 'NG Material', type: 'number', default: 0, half: true, u: true },
       { name: 'description', label: 'Keterangan / Description', type: 'textarea', help: 'Wajib diisi bila ada NG (jenis & penyebab).' }
     ],
-    values: row || { receipt_id: pre?.id },
+    values: row ? { ...row, unit: 'PCS', pps: null } : { receipt_id: pre?.id },
+    keepUnit: !!row,
+    unitFrom: v => by[v.receipt_id]?.unit,
+    ppsFrom: v => by[v.receipt_id]?.pcs_per_sheet,
     onInput: (v, hint) => {
       const r = by[v.receipt_id];
       if (!r) return hint();
       const sisa = Number(r.qc_balance) + own;
       const tot = (v.good_qty || 0) + (v.ng_qty || 0);
       const over = tot > sisa;
-      hint(`Qty SJ <b>${num(r.qty_sj)}</b> · Sisa belum dicek <b>${num(sisa)}</b> · Input ini <b>${num(tot)}</b>` +
-        (over ? `<br>⚠ Melebihi sisa SJ sebanyak ${num(tot - sisa)}.` : ''), over ? 'warn' : 'info');
+      hint(`Qty SJ <b>${num(r.qty_sj)}</b> · Sisa belum dicek <b>${num(sisa)}</b> · Input ini <b>${num(tot)}</b> (pcs)` +
+        (r.unit === 'SHEET' ? `<br>SJ ini diterima dalam sheet (${num(r.qty_input)} sheet × ${num(r.pcs_per_sheet)} pcs).` : '') +
+        (over ? `<br>⚠ Melebihi sisa SJ sebanyak ${num(tot - sisa)} pcs.` : ''), over ? 'warn' : 'info');
     },
     onSubmit: async v => {
       const r = by[v.receipt_id];
       const good = v.good_qty || 0, ng = v.ng_qty || 0;
       if (good + ng <= 0) throw new Error('Isi qty Good atau NG.');
-      if (good + ng > Number(r.qc_balance) + own) throw new Error(`Total Good + NG melebihi sisa SJ (${num(Number(r.qc_balance) + own)}).`);
+      if (good + ng > Number(r.qc_balance) + own) throw new Error(`Total Good + NG melebihi sisa SJ (${num(Number(r.qc_balance) + own)} pcs).`);
       if (ng > 0 && !v.description) throw new Error('Keterangan wajib diisi karena ada NG.');
       await save('qc_inspections', { receipt_id: v.receipt_id, inspect_date: v.inspect_date, good_qty: good, ng_qty: ng, description: v.description }, row?.id);
       toast('Hasil QC tersimpan'); rl();
@@ -412,27 +486,31 @@ async function issueForm(row, rl) {
   const by = Object.fromEntries(list.map(p => [p.id, p]));
   openForm({
     title: row ? 'Ubah Pengiriman Material' : 'Kirim Material ke Produksi',
-    sub: 'Hanya material berstatus GOOD dari QC yang bisa dikirim.',
+    sub: 'Hanya material berstatus GOOD dari QC yang bisa dikirim. Boleh diisi dalam sheet atau pcs.',
     fields: [
       { name: 'po_item_id', label: 'PI / Material', type: 'select', req: true, disabled: !!row,
-        options: list.map(p => ({ v: p.id, l: `${poLabel(p)} (stok ${num(p.stock_ready)})` })) },
+        options: list.map(p => ({ v: p.id, l: `${poLabel(p)} (stok ${num(p.stock_ready)} pcs)` })) },
+      ...UNIT_FIELDS,
       { name: 'request_date', label: 'Tanggal Request Material', type: 'date', req: true, default: today(), half: true },
-      { name: 'qty_sent', label: 'Qty Dikirim', type: 'number', req: true, min: 0.01, half: true },
+      { name: 'qty_sent', label: 'Qty Dikirim', type: 'number', req: true, min: 0.01, half: true, u: true },
       { name: 'notes', label: 'Catatan', type: 'textarea' }
     ],
-    values: row,
+    values: row ? { ...row, unit: 'PCS', pps: null } : null,
+    keepUnit: !!row,
+    unitFrom: v => by[v.po_item_id]?.unit,
+    ppsFrom: v => by[v.po_item_id]?.pcs_per_sheet,
     onInput: (v, hint) => {
       const p = by[v.po_item_id];
       if (!p) return hint();
       const stok = Number(p.stock_ready) + (row ? Number(row.qty_sent) : 0);
       const over = v.qty_sent != null && v.qty_sent > stok;
-      hint(`Stok GOOD siap kirim: <b>${num(stok)}</b>` + (over ? `<br>⚠ Qty melebihi stok sebanyak ${num(v.qty_sent - stok)}.` : ''), over ? 'warn' : 'info');
+      hint(`Stok GOOD siap kirim: <b>${num(stok)}</b> pcs` + (over ? `<br>⚠ Qty melebihi stok sebanyak ${num(v.qty_sent - stok)} pcs.` : ''), over ? 'warn' : 'info');
     },
     onSubmit: async v => {
       const p = by[v.po_item_id];
       const stok = Number(p.stock_ready) + (row ? Number(row.qty_sent) : 0);
-      if (v.qty_sent > stok) throw new Error(`Qty kirim melebihi stok GOOD (${num(stok)}).`);
-      if (row && v.qty_sent < Number(row.returned_qty)) throw new Error(`Qty kirim tidak boleh di bawah qty retur (${num(row.returned_qty)}).`);
+      if (v.qty_sent > stok) throw new Error(`Qty kirim melebihi stok GOOD (${num(stok)} pcs).`);
+      if (row && v.qty_sent < Number(row.returned_qty)) throw new Error(`Qty kirim tidak boleh di bawah qty retur (${num(row.returned_qty)} pcs).`);
       await save('supply_issues', { po_item_id: v.po_item_id, request_date: v.request_date, qty_sent: v.qty_sent, notes: v.notes }, row?.id);
       toast('Pengiriman tersimpan'); rl();
     }
@@ -449,18 +527,22 @@ async function returnForm(row, pre, rl) {
     title: row ? 'Ubah Retur' : 'Retur Material dari Produksi',
     fields: [
       { name: 'issue_id', label: 'Pengiriman', type: 'select', req: true, disabled: !!row,
-        options: list.map(i => ({ v: i.id, l: `${i.pi_no} · ${i.brand} · kirim ${dt(i.request_date)} (sisa ${num(i.balance)})` })) },
+        options: list.map(i => ({ v: i.id, l: `${i.pi_no} · ${i.brand} · kirim ${dt(i.request_date)} (sisa ${num(i.balance)} pcs)` })) },
+      ...UNIT_FIELDS,
       { name: 'return_date', label: 'Tanggal Retur', type: 'date', req: true, default: today(), half: true },
-      { name: 'qty_return', label: 'Qty Retur', type: 'number', req: true, min: 0.01, half: true },
+      { name: 'qty_return', label: 'Qty Retur', type: 'number', req: true, min: 0.01, half: true, u: true },
       { name: 'notes', label: 'Catatan / Alasan', type: 'textarea' }
     ],
-    values: row || { issue_id: pre?.id },
+    values: row ? { ...row, unit: 'PCS', pps: null } : { issue_id: pre?.id },
+    keepUnit: !!row,
+    unitFrom: v => by[v.issue_id]?.unit,
+    ppsFrom: v => by[v.issue_id]?.pcs_per_sheet,
     onInput: (v, hint) => {
       const i = by[v.issue_id];
       if (!i) return hint();
       const sisa = Number(i.balance) + own;
       const over = v.qty_return != null && v.qty_return > sisa;
-      hint(`Dikirim <b>${num(i.qty_sent)}</b> · Sisa di produksi <b>${num(sisa)}</b>` + (over ? '<br>⚠ Qty retur melebihi sisa di produksi.' : ''), over ? 'warn' : 'info');
+      hint(`Dikirim <b>${num(i.qty_sent)}</b> · Sisa di produksi <b>${num(sisa)}</b> (pcs)` + (over ? '<br>⚠ Qty retur melebihi sisa di produksi.' : ''), over ? 'warn' : 'info');
     },
     onSubmit: async v => {
       const i = by[v.issue_id];
@@ -515,26 +597,27 @@ const qcStatus = r => Number(r.qc_balance) <= 0 ? '<span class="pill ok">Selesai
 const DEFS = {
   gudang: () => ({
     id: 'gudang', title: 'Gudang · Incoming Material',
-    sub: 'Catat PI/PO dan penerimaan barang dari supplier berdasarkan Surat Jalan / DO.',
+    sub: 'Catat PI/PO dan penerimaan barang dari supplier berdasarkan Surat Jalan / DO. Semua jumlah dalam PCS; barang berbentuk sheet dikonversi otomatis (sheet × isi per sheet).',
     segments: [
       {
         id: 'sj', label: 'Penerimaan SJ',
-        load: () => q('v_receipts', [['receipt_date', false], ['created_at', false]]),
+        load: async () => (await q('v_receipts', [['receipt_date', false], ['created_at', false]]))
+          .map(r => ({ ...r, sj_input: fmtIn(r.unit, r.qty_input, r.pcs_per_sheet) })),
         cols: [
           { label: 'Tanggal', k: 'receipt_date', t: 'd' }, { label: 'PI No', k: 'pi_no', cls: 'strong' },
           { label: 'Brand', k: 'brand' }, { label: 'Spesifikasi', k: 'specification' },
           { label: 'Qty PO', k: 'qty_po', t: 'n', cls: 'num' }, { label: 'No. SJ / DO', k: 'sj_no' },
-          { label: 'Qty SJ', k: 'qty_sj', t: 'n', cls: 'num' }, { label: 'Status QC', f: qcStatus }
+          { label: 'Satuan SJ', k: 'sj_input' }, { label: 'Qty SJ (pcs)', k: 'qty_sj', t: 'n', cls: 'num' }, { label: 'Status QC', f: qcStatus }
         ],
         add: { label: 'Penerimaan Baru', stage: 'gudang', run: rl => receiptForm(null, rl) },
         acts: stdActs('receipts', 'gudang', (r, rl) => receiptForm(r, rl))
       },
       {
         id: 'po', label: 'Data PI',
-        load: () => q('v_po_summary'),
+        load: async () => (await q('v_po_summary')).map(p => ({ ...p, po_input: fmtIn(p.unit, p.qty_po_input, p.pcs_per_sheet) })),
         cols: [
           { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Spesifikasi', k: 'specification' },
-          { label: 'Qty PO', k: 'qty_po', t: 'n', cls: 'num' }, { label: 'Total Incoming', k: 'total_incoming', t: 'n', cls: 'num' },
+          { label: 'Satuan PO', k: 'po_input' }, { label: 'Qty PO (pcs)', k: 'qty_po', t: 'n', cls: 'num' }, { label: 'Total Incoming', k: 'total_incoming', t: 'n', cls: 'num' },
           { label: 'Balance', k: 'balance_po', t: 'b', cls: 'num' }
         ],
         add: { label: 'PI Baru', stage: 'gudang', run: rl => poForm(null, rl) },
@@ -719,7 +802,7 @@ const REPORT = [
   { g: 'INCOMING MATERIAL DATA', c: 'g', cols: [
     { k: 'no', l: 'NO', w: 6, t: 'x' }, { k: 'pi_no', l: 'PI. NO', w: 18, t: 'x' }, { k: 'brand', l: 'BRAND', w: 22, t: 'x', al: 'left' },
     { k: 'spec', l: 'SPESIFIKASI INCOMING MATERIAL', w: 26, t: 'x', al: 'left' }, { k: 'qty_po', l: 'QTY PO', w: 12, t: 'n' },
-    { k: 'sj_no', l: 'NO. SJ / DO. NO', w: 18, t: 'x' }, { k: 'qty_sj', l: 'QTY SJ', w: 12, t: 'n' },
+    { k: 'sj_no', l: 'NO. SJ / DO. NO', w: 18, t: 'x' }, { k: 'sj_input', l: 'SATUAN SJ', w: 22, t: 'x' }, { k: 'qty_sj', l: 'QTY SJ (PCS)', w: 13, t: 'n' },
     { k: 'total_in', l: 'TOTAL INCOMING MATERIAL', w: 17, t: 'n' }, { k: 'bal_po', l: 'BALANCE', w: 12, t: 'b' }] },
   { g: 'QC INCOMING MATERIAL', c: 'q', cols: [
     { k: 'good', l: 'GOOD MATERIAL', w: 14, t: 'n' }, { k: 'ng', l: 'NG MATERIAL', w: 14, t: 'n' },
@@ -757,7 +840,7 @@ async function loadReport() {
       if (r) {
         cum += Number(r.qty_sj);
         const q_ = qcBy[r.id] || [];
-        Object.assign(row, { sj_no: r.sj_no, qty_sj: r.qty_sj, total_in: cum, bal_po: Number(p.qty_po) - cum,
+        Object.assign(row, { sj_no: r.sj_no, sj_input: fmtIn(r.unit, r.qty_input, r.pcs_per_sheet), qty_sj: r.qty_sj, total_in: cum, bal_po: Number(p.qty_po) - cum,
           good: r.good_qty, ng: r.ng_qty, qc_desc: q_.map(x => x.description).filter(Boolean).join('; '), qc_bal: r.qc_balance });
       } else if (i === 0) { Object.assign(row, { total_in: 0, bal_po: Number(p.qty_po) }); }
       if (s) {
@@ -800,7 +883,7 @@ async function exportReportXLSX(rows) {
   const N = flat.length;
   const ws = wb.addWorksheet('Laporan', { views: [{ state: 'frozen', ySplit: 4, xSplit: 3 }] });
   ws.columns = flat.map(c => ({ width: c.w }));
-  xlTitle(ws, 'LAPORAN INCOMING MATERIAL → QC → SUPPLY → FINISH GOOD', N);
+  xlTitle(ws, 'LAPORAN INCOMING MATERIAL → QC → SUPPLY → FINISH GOOD (SATUAN: PCS)', N);
   let col = 1;
   REPORT.forEach(g => {
     ws.mergeCells(3, col, 3, col + g.cols.length - 1);
@@ -834,7 +917,7 @@ async function renderReport(body) {
   body.innerHTML = `<div class="toolbar"><div class="search">${icon('search', 18)}<input id="rq" type="search" placeholder="Cari PI, brand, SJ…"></div>
     <button class="btn primary" id="rx">${icon('download', 18)}<span>Export Excel</span></button></div>
     <div class="cnt" id="rcnt"></div><div id="rtbl"></div>
-    <p class="mut" style="font-size:12px;margin-top:8px">Geser tabel ke samping untuk melihat semua kolom. Hasil pencarian ikut terexport.</p>`;
+    <p class="mut" style="font-size:12px;margin-top:8px">Geser tabel ke samping untuk melihat semua kolom. Semua jumlah dalam PCS (barang yang masuk dalam sheet sudah dikonversi; kolom Satuan SJ menunjukkan input aslinya). Hasil pencarian ikut terexport.</p>`;
   let cur = rows;
   const draw = () => {
     const k = $('#rq').value.trim().toLowerCase();
