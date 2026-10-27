@@ -416,6 +416,7 @@ function poForm(row, rl, pre) {
       if (v.unit === 'SHEET' && k > 0 && L > 0) {
         const lv = k / 2, bk = Math.floor(lv / L);
         t += `<br>1 sheet (${num(k)} pcs) = ${num(lv)} leaves = ${num(bk)} filter book @${num(L)} leaves, sisa ${num(lv - bk * L)} leaves (digabung ke sheet berikutnya).`;
+        if (v.qty_po > 0) t += `<br><b>Estimasi: ${num(v.raw.qty_po)} sheet = ${num(v.qty_po)} pcs = ${num(v.qty_po / 2)} leaves ≈ ${num(Math.floor(v.qty_po / (2 * L)))} filter book @${num(L)} leaves</b>`;
       }
       hint(t);
     },
@@ -664,7 +665,7 @@ async function diecutForm(row, pre, rl) {
       const teori = v.sheets_in != null ? Math.round(v.sheets_in * k * 100) / 100 : null;
       const over = teori != null && teori > sisa + 1e-6;
       hint(`Good QC siap diecut: <b>${num(shn(sisa, r))}</b> sheet (= ${num(sisa)} pcs, isi ${num(k)} pcs per sheet)` +
-        (teori != null ? `<br>${num(v.sheets_in)} sheet → teori <b>${num(teori)}</b> pcs` + (r.leaves_per_book ? ` = ${num(teori / 2)} leaves` : '') : '') +
+        (teori != null ? `<br>${num(v.sheets_in)} sheet → teori <b>${num(teori)}</b> pcs` + (r.leaves_per_book ? ` = ${num(teori / 2)} leaves ≈ <b>${num(Math.floor(teori / (2 * Number(r.leaves_per_book))))} filter book</b> @${num(r.leaves_per_book)} leaves` : '') : '') +
         (over ? '<br>⚠ Melebihi Good QC yang belum didiecut.' : ''), over ? 'warn' : 'info');
     },
     onSubmit: async v => {
