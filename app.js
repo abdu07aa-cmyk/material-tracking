@@ -20,11 +20,12 @@ const ROLES = {
   admin: 'Admin',
   gudang: 'Leader Gudang',
   qc: 'Leader QC',
+  diecut: 'Leader Diecut',
   supply: 'Leader Supply Material',
   produksi: 'Leader Finish Good / Produksi',
   viewer: 'Viewer (belum diberi role)'
 };
-const STAGE_ROLE = { gudang: 'gudang', qc: 'qc', supply: 'supply', fg: 'produksi' };
+const STAGE_ROLE = { gudang: 'gudang', qc: 'qc', diecut: 'diecut', supply: 'supply', fg: 'produksi' };
 const isAdmin = () => state.profile?.role === 'admin';
 const can = stage => isAdmin() || state.profile?.role === STAGE_ROLE[stage];
 
@@ -43,7 +44,8 @@ const P = {
   logout: '<path d="M9 21H5V3h4M16 17l5-5-5-5M21 12H9"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/>',
   undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 010 10h-3"/>',
-  refresh: '<path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/>'
+  refresh: '<path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/>',
+  cut: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.12 15.88M14.47 14.48L20 20M8.12 8.12L12 12"/>'
 };
 const icon = (n, s = 20) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n]}</svg>`;
 
@@ -400,7 +402,7 @@ function poForm(row, rl, pre) {
       { name: 'item_name', label: 'Jenis Barang', req: true, list: names, placeholder: 'pilih atau ketik, mis. Booklet' },
       { name: 'specification', label: 'Spesifikasi Incoming Material', placeholder: 'mis. ukuran / gramasi / warna (boleh kosong)' },
       { name: 'leaves_per_book', label: 'Isi per Filter Book (leaves)', type: 'number', min: 1, req: true, list: ['32', '33', '40', '50', '60'],
-        placeholder: 'mis. 32', showIf: v => isFilterBook(v.item_name), help: 'Jumlah leaves yang dilem menjadi 1 filter book jadi.' },
+        placeholder: 'mis. 32', showIf: v => isFilterBook(v.item_name), help: '1 leaf = 1 pcs kiri + 1 pcs kanan yang dilem. Isi jumlah leaves per 1 filter book jadi.' },
       ...UNIT_FIELDS,
       { name: 'qty_po', label: 'Qty PO', type: 'number', req: true, min: 0.01, u: true }
     ],
@@ -410,9 +412,11 @@ function poForm(row, rl, pre) {
     onInput: (v, hint) => {
       if (!isFilterBook(v.item_name)) return hint();
       const L = Number(v.leaves_per_book), k = Number(v.pps);
-      let t = 'Filter Book datang dalam sheet: 1 sheet = kiri + kanan (mis. 45 + 45 = 90 pcs). Pilih satuan SHEET dan isi per sheet 90.';
-      if (v.unit === 'SHEET' && k > 0 && L > 0)
-        t += `<br>1 sheet (${num(k)} pcs) = ${num(Math.floor(k / L))} filter book @${num(L)} leaves, sisa ${num(k % L)} leaves (sisa digabung ke sheet berikutnya).`;
+      let t = 'Filter Book datang dalam sheet: 1 sheet = kiri + kanan (mis. 45 kiri + 45 kanan = 90 pcs = 45 leaves). Pilih satuan SHEET dan isi per sheet 90. Setelah QC, sheet masuk Diecut.';
+      if (v.unit === 'SHEET' && k > 0 && L > 0) {
+        const lv = k / 2, bk = Math.floor(lv / L);
+        t += `<br>1 sheet (${num(k)} pcs) = ${num(lv)} leaves = ${num(bk)} filter book @${num(L)} leaves, sisa ${num(lv - bk * L)} leaves (digabung ke sheet berikutnya).`;
+      }
       hint(t);
     },
     onSubmit: async (v, again) => {
@@ -519,7 +523,7 @@ async function qcForm(row, pre, rl) {
 async function issueForm(row, rl) {
   const pos = groupSort(await q('v_po_summary'));
   const list = row ? pos.filter(p => p.id === row.po_item_id) : pos.filter(p => Number(p.stock_ready) > 0);
-  if (!list.length) return toast('Belum ada material GOOD yang siap dikirim. Selesaikan QC terlebih dahulu.', 'err');
+  if (!list.length) return toast('Belum ada material GOOD yang siap dikirim. Selesaikan QC (barang sheet: Diecut dan QC ulang) terlebih dahulu.', 'err');
   const by = Object.fromEntries(list.map(p => [p.id, p]));
   openForm({
     title: row ? 'Ubah Pengiriman Material' : 'Kirim Material ke Produksi',
@@ -611,15 +615,15 @@ async function fgForm(row, rl) {
     onInput: (v, hint) => {
       const p = by[v.po_item_id];
       if (!p) return hint();
-      const L = Number(p.leaves_per_book) || 1;
+      const per = Number(p.pcs_per_book) || 1, lv = Number(p.leaves_per_book) || 0;
       const doneBooks = Number(p.fg_booklet) - (row ? Number(row.booklet_cones) : 0);
-      const sisa = Number(p.at_production) - doneBooks * L;
-      const need = (v.booklet_cones || 0) * L;
+      const sisa = Number(p.at_production) - doneBooks * per;
+      const need = (v.booklet_cones || 0) * per;
       const over = need > sisa;
-      hint(L > 1
-        ? `Filter Book isi <b>${num(L)}</b> leaves · Material di produksi <b>${num(p.at_production)}</b> · Terpakai <b>${num(doneBooks * L)}</b> (${num(doneBooks)} buku jadi) · Sisa <b>${num(sisa)}</b> leaves ≈ ${num(Math.floor(sisa / L))} buku` +
-          (need > 0 ? `<br>Input ini ${num(v.booklet_cones)} buku = ${num(need)} leaves` : '') +
-          (over ? '<br>⚠ Melebihi leaves yang ada di produksi — periksa kembali.' : '')
+      hint(lv > 0
+        ? `Filter Book isi <b>${num(lv)}</b> leaves (= ${num(per)} pcs kiri + kanan) · Material di produksi <b>${num(p.at_production)}</b> pcs · Terpakai <b>${num(doneBooks * per)}</b> pcs (${num(doneBooks)} buku jadi) · Sisa <b>${num(sisa)}</b> pcs = ${num(sisa / 2)} leaves ≈ ${num(Math.floor(sisa / per))} buku` +
+          (need > 0 ? `<br>Input ini ${num(v.booklet_cones)} buku = ${num(need)} pcs (${num(need / 2)} leaves)` : '') +
+          (over ? '<br>⚠ Melebihi material yang ada di produksi — periksa kembali.' : '')
         : `Material di produksi <b>${num(p.at_production)}</b> · Booklet/Cones jadi <b>${num(doneBooks)}</b> · Sisa <b>${num(sisa)}</b>` +
           (over ? '<br>⚠ Booklet/Cones melebihi material yang ada di produksi — periksa kembali.' : ''), over ? 'warn' : 'info');
     },
@@ -631,11 +635,100 @@ async function fgForm(row, rl) {
   });
 }
 
+const shn = (pcs, r) => Number(r.pcs_per_sheet) > 0 ? Math.round(Number(pcs) / Number(r.pcs_per_sheet) * 100) / 100 : 0;
+
+async function diecutForm(row, pre, rl) {
+  const recs = await q('v_receipts', [['receipt_date', true], ['created_at', true]]);
+  const list = row ? recs.filter(r => r.id === row.receipt_id)
+    : recs.filter(r => r.unit === 'SHEET' && (Number(r.dc_waiting) > 0 || (pre && r.id === pre.id)));
+  if (!list.length) return toast('Belum ada barang sheet yang lolos QC dan menunggu diecut.', 'err');
+  const by = Object.fromEntries(list.map(r => [r.id, r]));
+  const ownIn = row ? Number(row.qty_in) : 0;
+  openForm({
+    title: row ? 'Ubah Proses Diecut' : 'Proses Diecut',
+    sub: 'Sheet yang lolos QC incoming diubah menjadi pcs. Hasil pcs kemudian dicek QC ulang.',
+    fields: [
+      { name: 'receipt_id', label: 'Surat Jalan (sheet)', type: 'select', req: true, disabled: !!row,
+        options: list.map(r => ({ v: r.id, l: `${poLabel(r)} · SJ ${r.sj_no} (sisa ${num(shn(r.dc_waiting, r))} sheet)` })) },
+      { name: 'job_date', label: 'Tanggal Diecut', type: 'date', req: true, default: today() },
+      { name: 'sheets_in', label: 'Jumlah Sheet Didiecut', type: 'number', req: true, min: 0.01, half: true },
+      { name: 'qty_out', label: 'Hasil Diecut (pcs)', type: 'number', min: 0.01, half: true, help: 'Kosongkan bila hasil sesuai hitungan teori.' },
+      { name: 'notes', label: 'Catatan', type: 'textarea' }
+    ],
+    values: row || { receipt_id: pre?.id },
+    onInput: (v, hint) => {
+      const r = by[v.receipt_id];
+      if (!r) return hint();
+      const k = Number(r.pcs_per_sheet);
+      const sisa = Number(r.dc_waiting) + ownIn;
+      const teori = v.sheets_in != null ? Math.round(v.sheets_in * k * 100) / 100 : null;
+      const over = teori != null && teori > sisa + 1e-6;
+      hint(`Good QC siap diecut: <b>${num(shn(sisa, r))}</b> sheet (= ${num(sisa)} pcs, isi ${num(k)} pcs per sheet)` +
+        (teori != null ? `<br>${num(v.sheets_in)} sheet → teori <b>${num(teori)}</b> pcs` + (r.leaves_per_book ? ` = ${num(teori / 2)} leaves` : '') : '') +
+        (over ? '<br>⚠ Melebihi Good QC yang belum didiecut.' : ''), over ? 'warn' : 'info');
+    },
+    onSubmit: async v => {
+      const r = by[v.receipt_id];
+      const qin = Math.round(v.sheets_in * Number(r.pcs_per_sheet) * 100) / 100;
+      const sisa = Number(r.dc_waiting) + ownIn;
+      if (qin > sisa + 1e-6) throw new Error(`Sheet melebihi Good QC yang belum didiecut (${num(shn(sisa, r))} sheet).`);
+      const out = v.qty_out != null ? v.qty_out : qin;
+      await save('diecut_jobs', { receipt_id: v.receipt_id, job_date: v.job_date, sheets_in: v.sheets_in, qty_in: qin, qty_out: out, notes: v.notes }, row?.id);
+      toast('Proses diecut tersimpan'); rl();
+    }
+  });
+}
+
+async function qc2Form(row, pre, rl) {
+  const jobs = await q('v_diecut_jobs', [['job_date', false], ['created_at', false]]);
+  const list = row ? jobs.filter(j => j.id === row.diecut_id) : jobs.filter(j => Number(j.qc2_balance) > 0 || (pre && j.id === pre.id));
+  if (!list.length) return toast('Tidak ada hasil diecut yang menunggu QC ulang.', 'err');
+  const by = Object.fromEntries(list.map(j => [j.id, j]));
+  const own = row ? Number(row.good_qty) + Number(row.ng_qty) : 0;
+  openForm({
+    title: row ? 'Ubah QC Ulang' : 'Input QC Ulang (setelah Diecut)',
+    sub: 'Periksa hasil diecut dalam pcs. Total Good + NG tidak boleh melebihi hasil diecut.',
+    fields: [
+      { name: 'diecut_id', label: 'Hasil Diecut yang Dicek', type: 'select', req: true, disabled: !!row,
+        options: list.map(j => ({ v: j.id, l: `${poLabel(j)} · SJ ${j.sj_no} · diecut ${dt(j.job_date)} (sisa ${num(j.qc2_balance)} pcs)` })) },
+      { name: 'inspect_date', label: 'Tanggal Cek', type: 'date', req: true, default: today() },
+      { name: 'good_qty', label: 'Good (pcs)', type: 'number', default: 0, half: true },
+      { name: 'ng_qty', label: 'NG (pcs)', type: 'number', default: 0, half: true },
+      { name: 'description', label: 'Keterangan / Description', type: 'textarea', help: 'Wajib diisi bila ada NG (jenis & penyebab).' }
+    ],
+    values: row || { diecut_id: pre?.id },
+    onInput: (v, hint) => {
+      const j = by[v.diecut_id];
+      if (!j) return hint();
+      const sisa = Number(j.qc2_balance) + own;
+      const g = v.good_qty || 0, tot = g + (v.ng_qty || 0);
+      const over = tot > sisa;
+      hint(`Hasil diecut <b>${num(j.qty_out)}</b> pcs · Sisa belum dicek <b>${num(sisa)}</b> · Input ini <b>${num(tot)}</b> pcs` +
+        (j.leaves_per_book && g > 0 ? `<br>Good ${num(g)} pcs = ${num(g / 2)} leaves (1 leaf = 1 kiri + 1 kanan)` : '') +
+        (over ? `<br>⚠ Melebihi sisa hasil diecut sebanyak ${num(tot - sisa)} pcs.` : ''), over ? 'warn' : 'info');
+    },
+    onSubmit: async v => {
+      const j = by[v.diecut_id];
+      const good = v.good_qty || 0, ng = v.ng_qty || 0;
+      if (good + ng <= 0) throw new Error('Isi qty Good atau NG.');
+      if (good + ng > Number(j.qc2_balance) + own) throw new Error(`Total Good + NG melebihi sisa hasil diecut (${num(Number(j.qc2_balance) + own)} pcs).`);
+      if (ng > 0 && !v.description) throw new Error('Keterangan wajib diisi karena ada NG.');
+      await save('qc2_inspections', { diecut_id: v.diecut_id, inspect_date: v.inspect_date, good_qty: good, ng_qty: ng, description: v.description }, row?.id);
+      toast('QC ulang tersimpan'); rl();
+    }
+  });
+}
+
 /* =====================================================================
    HALAMAN
    ===================================================================== */
 const qcStatus = r => Number(r.qc_balance) <= 0 ? '<span class="pill ok">Selesai</span>'
   : (Number(r.good_qty) + Number(r.ng_qty) > 0 ? `<span class="pill warn">Sisa ${num(r.qc_balance)}</span>` : '<span class="pill gray">Belum QC</span>');
+
+const dcStatus = r => r.unit !== 'SHEET' ? '<span class="mut">–</span>'
+  : (Number(r.dc_waiting) > 0 && Number(r.good_qty) > 0 ? '<span class="pill warn">Menunggu Diecut</span>'
+  : Number(r.qc2_waiting) > 0 ? '<span class="pill warn">Menunggu QC Ulang</span>'
+  : Number(r.dc_qty_in) > 0 ? '<span class="pill ok">Selesai</span>' : '<span class="pill gray">Belum</span>');
 
 const DEFS = {
   gudang: () => ({
@@ -675,8 +768,8 @@ const DEFS = {
   }),
 
   qc: () => ({
-    id: 'qc', title: 'QC · Pengecekan Incoming',
-    sub: 'Periksa barang dari gudang: pisahkan Good dan NG. Hanya Good yang bisa dikirim ke produksi.',
+    id: 'qc', title: 'QC · Pengecekan',
+    sub: 'QC incoming: pisahkan Good dan NG. Barang sheet lanjut ke Diecut, lalu dicek lagi di QC ulang setelah jadi pcs.',
     segments: [
       {
         id: 'wait', label: 'Menunggu QC',
@@ -701,22 +794,76 @@ const DEFS = {
         acts: stdActs('qc_inspections', 'qc', (r, rl) => qcForm(r, null, rl))
       },
       {
+        id: 'wait2', label: 'Menunggu QC Ulang',
+        load: async () => (await q('v_diecut_jobs', [['job_date', true], ['created_at', true]])).filter(j => Number(j.qc2_balance) > 0),
+        cols: [
+          { label: 'Tgl Diecut', k: 'job_date', t: 'd' }, { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' },
+          { label: 'No. SJ / DO', k: 'sj_no' }, { label: 'Hasil Diecut (pcs)', k: 'qty_out', t: 'n', cls: 'num' },
+          { label: 'Good', k: 'qc2_good', t: 'n', cls: 'num' }, { label: 'NG', k: 'qc2_ng', t: 'n', cls: 'num' },
+          { label: 'Sisa Dicek', k: 'qc2_balance', t: 'b', cls: 'num' }
+        ],
+        acts: j => can('qc') ? [{ key: 'qc2', label: 'Input QC Ulang', icon: 'check', text: true, cls: 'primary', run: rl => qc2Form(null, j, rl) }] : []
+      },
+      {
+        id: 'hist2', label: 'Riwayat QC Ulang',
+        load: () => q('v_qc2_inspections', [['inspect_date', false], ['created_at', false]]),
+        cols: [
+          { label: 'Tgl Cek', k: 'inspect_date', t: 'd' }, { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' },
+          { label: 'No. SJ / DO', k: 'sj_no' }, { label: 'Hasil Diecut (pcs)', k: 'qty_out', t: 'n', cls: 'num' },
+          { label: 'Good', k: 'good_qty', t: 'n', cls: 'num' }, { label: 'NG', k: 'ng_qty', t: 'n', cls: 'num' },
+          { label: 'Keterangan', k: 'description' }
+        ],
+        add: { label: 'Input QC Ulang', stage: 'qc', run: rl => qc2Form(null, null, rl) },
+        acts: stdActs('qc2_inspections', 'qc', (r, rl) => qc2Form(r, null, rl))
+      },
+      {
         id: 'all', label: 'Semua SJ',
         load: () => q('v_receipts', [['receipt_date', false], ['created_at', false]]),
         cols: [
           { label: 'Tgl Terima', k: 'receipt_date', t: 'd' }, { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' },
           { label: 'No. SJ / DO', k: 'sj_no' }, { label: 'Qty SJ', k: 'qty_sj', t: 'n', cls: 'num' },
           { label: 'Good', k: 'good_qty', t: 'n', cls: 'num' }, { label: 'NG', k: 'ng_qty', t: 'n', cls: 'num' },
-          { label: 'Status', f: qcStatus }
+          { label: 'Status', f: qcStatus }, { label: 'Diecut', f: dcStatus }
         ],
         acts: () => []
       }
     ]
   }),
 
+  diecut: () => ({
+    id: 'diecut', title: 'Diecut · Sheet menjadi PCS',
+    sub: 'Barang berbentuk sheet yang sudah lolos QC incoming diproses diecut menjadi pcs, lalu dicek QC ulang oleh Leader QC.',
+    segments: [
+      {
+        id: 'wait', label: 'Menunggu Diecut',
+        load: async () => (await q('v_receipts', [['receipt_date', true], ['created_at', true]]))
+          .filter(r => r.unit === 'SHEET' && Number(r.dc_waiting) > 0)
+          .map(r => ({ ...r, good_sheet: shn(r.good_qty, r), done_sheet: Number(r.dc_sheets), wait_sheet: shn(r.dc_waiting, r) })),
+        cols: [
+          { label: 'Tgl Terima', k: 'receipt_date', t: 'd' }, { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' },
+          { label: 'No. SJ / DO', k: 'sj_no' }, { label: 'Good QC (sheet)', k: 'good_sheet', t: 'n', cls: 'num' },
+          { label: 'Sudah Diecut (sheet)', k: 'done_sheet', t: 'n', cls: 'num' }, { label: 'Sisa Diecut (sheet)', k: 'wait_sheet', t: 'b', cls: 'num' }
+        ],
+        acts: r => can('diecut') ? [{ key: 'dc', label: 'Proses Diecut', icon: 'cut', text: true, cls: 'primary', run: rl => diecutForm(null, r, rl) }] : []
+      },
+      {
+        id: 'hist', label: 'Riwayat Diecut',
+        load: () => q('v_diecut_jobs', [['job_date', false], ['created_at', false]]),
+        cols: [
+          { label: 'Tgl Diecut', k: 'job_date', t: 'd' }, { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' },
+          { label: 'No. SJ / DO', k: 'sj_no' }, { label: 'Sheet Didiecut', k: 'sheets_in', t: 'n', cls: 'num' },
+          { label: 'Hasil (pcs)', k: 'qty_out', t: 'n', cls: 'num' }, { label: 'QC Ulang Good', k: 'qc2_good', t: 'n', cls: 'num' },
+          { label: 'QC Ulang NG', k: 'qc2_ng', t: 'n', cls: 'num' }, { label: 'Sisa QC Ulang', k: 'qc2_balance', t: 'b', cls: 'num' }
+        ],
+        add: { label: 'Proses Diecut', stage: 'diecut', run: rl => diecutForm(null, null, rl) },
+        acts: stdActs('diecut_jobs', 'diecut', (r, rl) => diecutForm(r, null, rl))
+      }
+    ]
+  }),
+
   supply: () => ({
     id: 'supply', title: 'Supply Material · Ke Produksi',
-    sub: 'Catat material GOOD yang diminta produksi, serta retur bila ada sisa.',
+    sub: 'Catat material GOOD yang diminta produksi, serta retur bila ada sisa. Barang sheet baru bisa dikirim setelah Diecut dan QC ulang.',
     segments: [
       {
         id: 'issue', label: 'Pengiriman',
@@ -746,10 +893,10 @@ const DEFS = {
       },
       {
         id: 'stock', label: 'Stok Siap Kirim',
-        load: async () => (await q('v_po_summary', [['pi_no', true]])).filter(p => Number(p.good_total) > 0),
+        load: async () => (await q('v_po_summary', [['pi_no', true]])).filter(p => Number(p.good_ready) > 0),
         cols: [
           { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' }, { label: 'Spesifikasi', k: 'specification' },
-          { label: 'Good (QC)', k: 'good_total', t: 'n', cls: 'num' }, { label: 'Dikirim', k: 'supplied_total', t: 'n', cls: 'num' },
+          { label: 'Good Siap Pakai', k: 'good_ready', t: 'n', cls: 'num' }, { label: 'Dikirim', k: 'supplied_total', t: 'n', cls: 'num' },
           { label: 'Retur', k: 'returned_total', t: 'n', cls: 'num' }, { label: 'Stok Siap Kirim', k: 'stock_ready', t: 'b', cls: 'num' }
         ],
         acts: () => []
@@ -847,6 +994,7 @@ function poCard(p) {
     <div class="stages">
       <div class="st g"><em>Gudang</em><strong>${num(p.total_incoming)}</strong><div class="bar"><i style="width:${pct}%"></i></div><small>dari PO ${num(p.qty_po)}</small></div>
       <div class="st q"><em>QC</em><strong>${num(p.good_total)} <span style="font-size:12px;font-weight:600">good</span></strong><small>NG ${num(p.ng_total)} · menunggu ${num(p.qc_pending)}</small></div>
+      ${p.has_sheet ? `<div class="st d"><em>Diecut</em><strong>${num(p.dc_out)} <span style="font-size:12px;font-weight:600">pcs hasil</span></strong><small>Sheet ${num(p.dc_sheets)} · tunggu diecut ${num(p.dc_waiting)} pcs<br>QC ulang: good ${num(p.qc2_good)} · NG ${num(p.qc2_ng)} · tunggu ${num(p.qc2_pending)}</small></div>` : ''}
       <div class="st s"><em>Supply</em><strong>${num(p.at_production)} <span style="font-size:12px;font-weight:600">di produksi</span></strong><small>Kirim ${num(p.supplied_total)} · retur ${num(p.returned_total)}<br>Stok siap ${num(p.stock_ready)}</small></div>
       <div class="st f"><em>Finish Good</em><strong>${num(p.fg_booklet)} <span style="font-size:12px;font-weight:600">${p.leaves_per_book ? 'filter book' : 'booklet/cones'}</span></strong><small>Karton ${num(p.fg_karton)} · Display ${num(p.fg_display)}<br>Balance ${num(p.fg_balance)}</small></div>
     </div></div>`;
@@ -862,6 +1010,12 @@ const REPORT = [
   { g: 'QC INCOMING MATERIAL', c: 'q', cols: [
     { k: 'good', l: 'GOOD MATERIAL', w: 14, t: 'n' }, { k: 'ng', l: 'NG MATERIAL', w: 14, t: 'n' },
     { k: 'qc_desc', l: 'DESCRIPTION', w: 28, t: 'x', al: 'left' }, { k: 'qc_bal', l: 'BALANCE', w: 12, t: 'b' }] },
+  { g: 'DIECUT (SHEET JADI PCS)', c: 'd', cols: [
+    { k: 'dc_sheets', l: 'SHEET DIECUT', w: 13, t: 'n' }, { k: 'dc_out', l: 'HASIL DIECUT (PCS)', w: 15, t: 'n' },
+    { k: 'dc_bal', l: 'BALANCE (SHEET)', w: 14, t: 'b' }] },
+  { g: 'QC ULANG SETELAH DIECUT', c: 'q2', cols: [
+    { k: 'qc2_good', l: 'GOOD (PCS)', w: 12, t: 'n' }, { k: 'qc2_ng', l: 'NG (PCS)', w: 12, t: 'n' },
+    { k: 'qc2_desc', l: 'DESCRIPTION', w: 26, t: 'x', al: 'left' }, { k: 'qc2_bal', l: 'BALANCE', w: 12, t: 'b' }] },
   { g: 'SUPPLY MATERIAL', c: 's', cols: [
     { k: 'req_date', l: 'MATERIAL REQUEST DATE', w: 16, t: 'd' }, { k: 'sent', l: 'NO OF MATERIAL SENT', w: 14, t: 'n' },
     { k: 'ret_date', l: 'MATERIAL RETURN DATE', w: 16, t: 'd' }, { k: 'ret_qty', l: 'NO OF MATERIAL RETURN', w: 15, t: 'n' },
@@ -872,17 +1026,18 @@ const REPORT = [
 ];
 
 async function loadReport() {
-  const [pos, recs, qcs, iss, rets, fgs] = await Promise.all([
+  const [pos, recs, qcs, iss, rets, fgs, qc2s] = await Promise.all([
     q('v_po_summary', [['created_at', true]]),
     q('v_receipts', [['receipt_date', true], ['created_at', true]]),
     q('v_qc_inspections', [['inspect_date', true], ['created_at', true]]),
     q('v_supply_issues', [['request_date', true], ['created_at', true]]),
     q('v_supply_returns', [['return_date', true], ['created_at', true]]),
-    q('v_fg_receipts', [['received_date', true], ['created_at', true]])
+    q('v_fg_receipts', [['received_date', true], ['created_at', true]]),
+    q('v_qc2_inspections', [['inspect_date', true], ['created_at', true]])
   ]);
   const by = (arr, k) => arr.reduce((m, x) => { (m[x[k]] = m[x[k]] || []).push(x); return m; }, {});
   const recBy = by(recs, 'po_item_id'), issBy = by(iss, 'po_item_id'), fgBy = by(fgs, 'po_item_id');
-  const qcBy = by(qcs, 'receipt_id'), retBy = by(rets, 'issue_id');
+  const qcBy = by(qcs, 'receipt_id'), retBy = by(rets, 'issue_id'), qc2By = by(qc2s, 'receipt_id');
   const out = [];
   let piNo = 0, lastKey = null;
   groupSort(pos).forEach(p => {
@@ -901,6 +1056,9 @@ async function loadReport() {
         const q_ = qcBy[r.id] || [];
         Object.assign(row, { sj_no: r.sj_no, sj_input: fmtIn(r.unit, r.qty_input, r.pcs_per_sheet), qty_sj: r.qty_sj, total_in: cum, bal_po: Number(p.qty_po) - cum,
           good: r.good_qty, ng: r.ng_qty, qc_desc: q_.map(x => x.description).filter(Boolean).join('; '), qc_bal: r.qc_balance });
+        if (r.unit === 'SHEET') Object.assign(row, { dc_sheets: r.dc_sheets, dc_out: r.dc_qty_out,
+          dc_bal: Number(r.pcs_per_sheet) > 0 ? Number(r.dc_waiting) / Number(r.pcs_per_sheet) : 0,
+          qc2_good: r.qc2_good, qc2_ng: r.qc2_ng, qc2_desc: (qc2By[r.id] || []).map(x => x.description).filter(Boolean).join('; '), qc2_bal: r.qc2_waiting });
       } else if (i === 0) { Object.assign(row, { total_in: 0, bal_po: Number(p.qty_po) }); }
       if (s) {
         const rr = retBy[s.id] || [];
@@ -908,7 +1066,7 @@ async function loadReport() {
           ret_qty: s.returned_qty, sup_bal: s.balance });
       }
       if (f) {
-        cumBook += Number(f.booklet_cones) * (Number(p.leaves_per_book) || 1);
+        cumBook += Number(f.booklet_cones) * (Number(p.pcs_per_book) || 1);
         Object.assign(row, { fg_date: f.received_date, karton: f.karton, display: f.display, booklet: f.booklet_cones,
           fg_bal: Number(p.at_production) - cumBook });
       }
@@ -1009,7 +1167,7 @@ async function renderSummary(view) {
   let rows;
   try { rows = await q('v_po_summary'); } catch (e) { view.insertAdjacentHTML('beforeend', ''); view.querySelector('.loading').outerHTML = `<div class="errbox">${esc(errMsg(e))}</div>`; return; }
   const sum = k => rows.reduce((a, r) => a + Number(r[k] || 0), 0);
-  const kp = [['Total PI', new Set(rows.map(r => r.pi_no + '|' + r.brand)).size, 'g'], ['Total Incoming', num(sum('total_incoming')), 'g'], ['Menunggu QC', num(sum('qc_pending')), 'q'],
+  const kp = [['Total PI', new Set(rows.map(r => r.pi_no + '|' + r.brand)).size, 'g'], ['Total Incoming', num(sum('total_incoming')), 'g'], ['Menunggu QC', num(sum('qc_pending')), 'q'], ['Menunggu Diecut', num(sum('dc_waiting')), 'd'], ['Menunggu QC Ulang', num(sum('qc2_pending')), 'q'],
     ['Good', num(sum('good_total')), 'q'], ['NG', num(sum('ng_total')), 'r'], ['Stok Siap Kirim', num(sum('stock_ready')), 's'],
     ['Di Produksi', num(sum('at_production')), 's'], ['Booklet / Cones Jadi', num(sum('fg_booklet')), 'f']];
   view.querySelector('.loading').outerHTML = `
@@ -1047,6 +1205,7 @@ const NAV = [
   { id: 'dashboard', label: 'Dashboard', icon: 'dash' },
   { id: 'gudang', label: 'Gudang', icon: 'box' },
   { id: 'qc', label: 'QC', icon: 'check' },
+  { id: 'diecut', label: 'Diecut', icon: 'cut' },
   { id: 'supply', label: 'Supply', icon: 'truck' },
   { id: 'fg', label: 'Finish Good', icon: 'pkg' },
   { id: 'users', label: 'Pengguna', icon: 'users', admin: true }
