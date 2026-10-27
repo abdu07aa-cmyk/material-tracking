@@ -246,6 +246,7 @@ async function save(table, payload, id) {
   const { data, error } = await r.select();
   if (error) throw error;
   if (!data || !data.length) throw new Error('Data tidak tersimpan. Anda mungkin tidak punya hak akses.');
+  return data[0];
 }
 async function del(table, id) {
   const { data, error } = await sb.from(table).delete().eq('id', id).select();
@@ -564,6 +565,7 @@ async function returnForm(row, pre, rl) {
   const list = row ? issues.filter(i => i.id === row.issue_id) : issues.filter(i => Number(i.balance) > 0 || (pre && i.id === pre.id));
   if (!list.length) return toast('Tidak ada material di produksi yang bisa diretur.', 'err');
   const by = Object.fromEntries(list.map(i => [i.id, i]));
+  const po = Object.fromEntries((await q('v_po_summary')).map(p => [p.id, p]));
   const own = row ? Number(row.qty_return) : 0;
   openForm({
     title: row ? 'Ubah Retur' : 'Retur Material dari Produksi',
@@ -573,9 +575,13 @@ async function returnForm(row, pre, rl) {
       ...UNIT_FIELDS,
       { name: 'return_date', label: 'Tanggal Retur', type: 'date', req: true, default: today(), half: true },
       { name: 'qty_return', label: 'Qty Retur', type: 'number', req: true, min: 0.01, half: true, u: true },
+      { name: 'kondisi', label: 'Kondisi Barang Retur', type: 'select', req: true,
+        options: [{ v: 'GOOD', l: 'Masih bagus – kembali ke stok siap kirim' }, { v: 'NG', l: 'Rusak / NG – tidak kembali ke stok' }] },
+      ...(row ? [] : [{ name: 'ganti', label: 'Kirim Pengganti Sekarang?', type: 'select', req: true,
+        options: [{ v: 'N', l: 'Tidak' }, { v: 'Y', l: 'Ya – kirim barang pengganti sebanyak qty retur' }] }]),
       { name: 'notes', label: 'Catatan / Alasan', type: 'textarea' }
     ],
-    values: row ? { ...row, unit: 'PCS', pps: null } : { issue_id: pre?.id },
+    values: row ? { ...row, unit: 'PCS', pps: null } : { issue_id: pre?.id, kondisi: 'NG', ganti: 'N' },
     keepUnit: !!row,
     unitFrom: v => by[v.issue_id]?.unit,
     ppsFrom: v => by[v.issue_id]?.pcs_per_sheet,
@@ -584,13 +590,26 @@ async function returnForm(row, pre, rl) {
       if (!i) return hint();
       const sisa = Number(i.balance) + own;
       const over = v.qty_return != null && v.qty_return > sisa;
-      hint(`Dikirim <b>${num(i.qty_sent)}</b> · Sisa di produksi <b>${num(sisa)}</b> (pcs)` + (over ? '<br>⚠ Qty retur melebihi sisa di produksi.' : ''), over ? 'warn' : 'info');
+      const stokAwal = Number(po[i.po_item_id]?.stock_ready || 0), q = v.qty_return || 0;
+      const stokBaru = stokAwal + (v.kondisi === 'GOOD' ? q : 0);
+      const gantiOver = v.ganti === 'Y' && q > stokBaru;
+      hint(`Dikirim <b>${num(i.qty_sent)}</b> · Sisa di produksi <b>${num(sisa)}</b> (pcs)` + (over ? '<br>⚠ Qty retur melebihi sisa di produksi.' : '') +
+        (v.ganti === 'Y' ? `<br>Stok siap kirim setelah retur: <b>${num(stokBaru)}</b> pcs · pengganti <b>${num(q)}</b> pcs` + (gantiOver ? '<br>⚠ Stok Good tidak cukup untuk pengganti.' : '') : ''), over || gantiOver ? 'warn' : 'info');
     },
     onSubmit: async v => {
       const i = by[v.issue_id];
       if (v.qty_return > Number(i.balance) + own) throw new Error('Qty retur melebihi sisa material di produksi.');
       if (v.return_date < i.request_date) throw new Error('Tanggal retur tidak boleh sebelum tanggal request.');
-      await save('supply_returns', { issue_id: v.issue_id, return_date: v.return_date, qty_return: v.qty_return, notes: v.notes }, row?.id);
+      const saved = await save('supply_returns', { issue_id: v.issue_id, return_date: v.return_date, qty_return: v.qty_return, kondisi: v.kondisi, notes: v.notes }, row?.id);
+      if (!row && v.ganti === 'Y') {
+        try {
+          await save('supply_issues', { po_item_id: i.po_item_id, request_date: v.return_date, qty_sent: v.qty_return, notes: 'Pengganti retur' + (v.notes ? ': ' + v.notes : '') });
+        } catch (e) {
+          await sb.from('supply_returns').delete().eq('id', saved.id);   // batalkan retur agar tidak setengah tersimpan
+          throw new Error('Retur dibatalkan karena pengganti gagal dikirim: ' + errMsg(e));
+        }
+        toast('Retur tersimpan dan pengganti sudah dikirim'); return rl();
+      }
       toast('Retur tersimpan'); rl();
     }
   });
@@ -887,7 +906,7 @@ const DEFS = {
         cols: [
           { label: 'Tgl Retur', k: 'return_date', t: 'd' }, { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' },
           { label: 'Tgl Request', k: 'request_date', t: 'd' }, { label: 'Qty Dikirim', k: 'qty_sent', t: 'n', cls: 'num' },
-          { label: 'Qty Retur', k: 'qty_return', t: 'n', cls: 'num' }, { label: 'Catatan', k: 'notes' }
+          { label: 'Qty Retur', k: 'qty_return', t: 'n', cls: 'num' }, { label: 'Kondisi', k: 'kondisi' }, { label: 'Catatan', k: 'notes' }
         ],
         add: { label: 'Input Retur', stage: 'supply', run: rl => returnForm(null, null, rl) },
         acts: stdActs('supply_returns', 'supply', (r, rl) => returnForm(r, null, rl))
