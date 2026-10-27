@@ -1171,15 +1171,62 @@ async function renderReport(body) {
   };
 }
 
+/* ---------- Rekap total per Jenis Barang ---------- */
+const REKAP_COLS = [
+  { label: 'Jenis Barang', k: 'name', cls: 'strong' }, { label: 'Jumlah Item PI', k: 'n', t: 'n', cls: 'num' },
+  { label: 'Qty PO', k: 'qty_po', t: 'n', cls: 'num' }, { label: 'Total Diterima (Incoming)', k: 'total_incoming', t: 'n', cls: 'num' },
+  { label: 'Good QC', k: 'good_total', t: 'n', cls: 'num' }, { label: 'NG QC', k: 'ng_total', t: 'n', cls: 'num' },
+  { label: 'Total Dikirim ke Produksi', k: 'supplied_total', t: 'n', cls: 'num' }, { label: 'Retur', k: 'returned_total', t: 'n', cls: 'num' },
+  { label: 'Di Produksi', k: 'at_production', t: 'n', cls: 'num' }, { label: 'Stok Siap Kirim', k: 'stock_ready', t: 'n', cls: 'num' },
+  { label: 'Finish Good Jadi', k: 'fg_booklet', t: 'n', cls: 'num' }
+];
+function rekapRows(rows) {
+  const m = new Map();
+  rows.forEach(p => {
+    const key = (p.item_name || '').trim().toLowerCase();
+    if (!m.has(key)) m.set(key, { name: (p.item_name || '').trim() || '(belum diisi jenis barang)', n: 0 });
+    const g = m.get(key); g.n++;
+    REKAP_COLS.forEach(c => { if (c.k !== 'name' && c.k !== 'n') g[c.k] = (g[c.k] || 0) + Number(p[c.k] || 0); });
+  });
+  const out = [...m.values()].sort((x, y) => x.name.localeCompare(y.name));
+  const tot = { name: 'TOTAL', n: 0 };
+  out.forEach(g => REKAP_COLS.forEach(c => { if (c.k !== 'name') tot[c.k] = (tot[c.k] || 0) + (g[c.k] || 0); }));
+  return { out, tot };
+}
+async function renderRekap(body) {
+  body.innerHTML = '<div class="loading"><span class="spin"></span>Menghitung rekap…</div>';
+  let rows;
+  try { rows = await q('v_po_summary'); } catch (e) { body.innerHTML = `<div class="errbox">${esc(errMsg(e))}</div>`; return; }
+  body.innerHTML = `<div class="toolbar"><div class="search">${icon('search', 18)}<input id="rk" type="search" placeholder="Filter PI / brand (opsional)…"></div>
+    <button class="btn primary" id="rkx">${icon('download', 18)}<span>Export Excel</span></button></div>
+    <div id="rkt"></div>
+    <p class="mut" style="font-size:12px;margin-top:8px">Total semua PI per jenis barang, dalam PCS. Ketik nomor PI atau brand di kolom cari untuk melihat total PI tertentu saja. Retur sudah termasuk di kolom Retur dan mengurangi Di Produksi.</p>`;
+  let cur = [];
+  const draw = () => {
+    const k = $('#rk').value.trim().toLowerCase();
+    const f = k ? rows.filter(r => [r.pi_no, r.brand, r.item_name, r.specification].join(' ').toLowerCase().includes(k)) : rows;
+    const { out, tot } = rekapRows(f); cur = out.concat([{ ...tot, n: f.length }]);
+    $('#rkt').innerHTML = f.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr>${REKAP_COLS.map(c => `<th class="${c.cls === 'num' ? 'num' : ''}">${esc(c.label)}</th>`).join('')}</tr></thead><tbody>${
+      cur.map((g, i) => `<tr${i === cur.length - 1 ? ' style="font-weight:800;background:#eef2ff"' : ''}>${REKAP_COLS.map(c => `<td class="${c.cls === 'num' ? 'num' : ''}">${c.t === 'n' ? num(g[c.k] || 0) : esc(g[c.k] ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
+      : '<div class="empty"><b>Tidak ada data</b></div>';
+  };
+  $('#rk').oninput = draw; draw();
+  $('#rkx').onclick = async e => {
+    const b = e.currentTarget; b.disabled = true;
+    try { await exportXLSX('Rekap Total per Jenis Barang', REKAP_COLS, cur, 'rekap-jenis-barang'); toast('Excel diunduh'); } catch (err) { toast(errMsg(err), 'err'); }
+    b.disabled = false;
+  };
+}
+
 async function renderDashboard(view) {
-  const tab = state.seg.dashboard === 'rpt' ? 'rpt' : 'sum';
+  const tab = ['rpt', 'rkp'].includes(state.seg.dashboard) ? state.seg.dashboard : 'sum';
   view.innerHTML = `<div class="page-head"><div><h1>Dashboard</h1><p>Ringkasan alur material dari Gudang sampai Finish Good.</p></div>
     <button class="btn ghost" id="rf">${icon('refresh', 18)}<span>Muat ulang</span></button></div>
-    <div class="seg" id="dsegs"><button data-seg="sum" class="${tab === 'sum' ? 'on' : ''}">Ringkasan</button><button data-seg="rpt" class="${tab === 'rpt' ? 'on' : ''}">Laporan Tabel</button></div>
+    <div class="seg" id="dsegs"><button data-seg="sum" class="${tab === 'sum' ? 'on' : ''}">Ringkasan</button><button data-seg="rkp" class="${tab === 'rkp' ? 'on' : ''}">Rekap Barang</button><button data-seg="rpt" class="${tab === 'rpt' ? 'on' : ''}">Laporan Tabel</button></div>
     <div id="dbody"></div>`;
   $('#rf').onclick = () => renderDashboard(view);
   $('#dsegs').onclick = e => { const b = e.target.closest('[data-seg]'); if (b) { state.seg.dashboard = b.dataset.seg; renderDashboard(view); } };
-  if (tab === 'rpt') await renderReport($('#dbody')); else await renderSummary($('#dbody'));
+  if (tab === 'rpt') await renderReport($('#dbody')); else if (tab === 'rkp') await renderRekap($('#dbody')); else await renderSummary($('#dbody'));
 }
 
 async function renderSummary(view) {
