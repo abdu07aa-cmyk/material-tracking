@@ -18,6 +18,24 @@ Satu PI bisa berisi Booklet, Filter Book, Filter Cones, Display, Cover, dll. Set
 - Dashboard dan Laporan Tabel dikelompokkan per PI, dengan kolom **Jenis Barang**. Finish Good dicatat per item, sama seperti baris di Excel.
 - **Update dari versi sebelumnya:** jalankan ulang seluruh isi `schema.sql`. Data lama aman; item lama belum punya Jenis Barang, buka tombol ubah lalu isi Jenis Barang-nya.
 
+## Alur barang SHEET: Diecut dan QC Ulang
+Barang yang datang dalam bentuk **sheet** melewati tahap tambahan. Barang berbentuk PCS langsung ke Supply.
+
+**Gudang → QC Incoming (hitung sheet) → Diecut (sheet jadi pcs) → QC Ulang (hitung pcs) → Supply → Finish Good**
+
+- **Leader Diecut** (role baru) memakai menu **Diecut**: tab *Menunggu Diecut* menampilkan sheet yang lolos QC. Isi jumlah sheet yang didiecut; hasil pcs terisi otomatis (sheet × isi per sheet). Bila hasil nyata berbeda, isi kolom Hasil Diecut.
+- **Leader QC** memakai tab *Menunggu QC Ulang* di menu QC untuk mengecek hasil diecut dalam pcs (Good + NG, NG wajib keterangan).
+- **Stok siap kirim** untuk barang sheet dihitung dari **Good QC Ulang**, bukan Good QC Incoming. Supply tidak bisa mengirim barang yang belum didiecut dan dicek ulang.
+- Dashboard menampilkan kotak Diecut per PI dan KPI "Menunggu Diecut" / "Menunggu QC Ulang". Laporan Tabel dan Excel punya grup kolom **DIECUT** dan **QC ULANG**.
+
+## Filter Book
+- Filter Book datang dalam sheet berisi kiri + kanan. Contoh: 45 kanan + 45 kiri = **90 pcs per sheet**. Di form PI isi Jenis Barang `Filter Book`, satuan **SHEET**, isi per sheet **90**.
+- **1 kiri + 1 kanan yang dilem = 1 leaf.** Jadi 90 pcs = **45 leaves**; 10 sheet = 900 pcs = 450 leaves.
+- Kolom **Isi per Filter Book (leaves)**: 32, 33, 40, 50, 60, atau angka lain. 1 filter book jadi memakai leaves × 2 pcs (mis. 32 leaves = 64 pcs).
+- QC ulang mencatat **total pcs saja** (kiri dan kanan tidak dipisah); form menampilkan konversi ke leaves.
+- Di **Finish Good**, isi jumlah filter book jadi. Balance otomatis memotong jumlah jadi × pcs per filter book, dan form menampilkan sisa leaves serta perkiraan buku yang masih bisa dibuat.
+- **Update:** jalankan ulang seluruh `schema.sql`, lalu ubah item Filter Book yang sudah ada dan isi ulang leaves-nya (artinya berubah menjadi pasangan kiri+kanan). SJ sheet lama kini perlu Diecut + QC Ulang sebelum stoknya bisa dikirim.
+
 ## Satuan PCS dan SHEET
 Barang dari supplier bisa datang dalam PCS atau masih berbentuk sheet (1 sheet berisi 3, 4, 6, 8 pcs atau lebih, bebas per material/SJ).
 - Semua jumlah dan saldo di database dihitung dalam **PCS**, jadi balance Gudang → QC → Supply → Finish Good selalu sinkron.
@@ -56,7 +74,7 @@ Setelah mengganti logo/manifest, hapus pintasan lama lalu pasang ulang agar logo
 3. **Authentication → Providers → Email**: matikan **Allow new users to sign up** (agar hanya akun dari Admin yang bisa masuk). Matikan juga "Confirm email" bila Anda membuat user lewat dashboard dengan Auto Confirm.
 4. **Authentication → Users → Add user**: buat akun untuk setiap orang (email + password, centang *Auto Confirm User*).
    - **Akun pertama yang dibuat otomatis menjadi Admin.** Buat akun Anda dulu.
-5. Login ke aplikasi sebagai Admin → menu **Pengguna** → atur role: Leader Gudang, Leader QC, Leader Supply Material, Leader Finish Good/Produksi.
+5. Login ke aplikasi sebagai Admin → menu **Pengguna** → atur role: Leader Gudang, Leader QC, **Leader Diecut**, Leader Supply Material, Leader Finish Good/Produksi.
 6. **Project Settings → API**: salin *Project URL* dan *anon public key*.
 
 ### 2. Config
@@ -74,7 +92,8 @@ Edit `config.js`, isi `SUPABASE_URL` dan `SUPABASE_ANON_KEY`. Jangan pakai `serv
 |---|---|---|---|
 | Admin | Semua | Semua menu | Ya |
 | Leader Gudang | Semua | PI & Penerimaan SJ | Tidak |
-| Leader QC | Semua | Hasil QC | Tidak |
+| Leader QC | Semua | Hasil QC & QC Ulang | Tidak |
+| Leader Diecut | Semua | Proses Diecut | Tidak |
 | Leader Supply | Semua | Pengiriman & Retur | Tidak |
 | Leader Produksi | Semua | Finish Good | Tidak |
 | Viewer | Semua | Tidak ada | Tidak |
@@ -82,17 +101,18 @@ Edit `config.js`, isi `SUPABASE_URL` dan `SUPABASE_ANON_KEY`. Jangan pakai `serv
 ## Aturan validasi (dijaga database)
 - No SJ tidak boleh dobel pada PI yang sama; PI + Brand + Spesifikasi tidak boleh dobel.
 - QC: Good + NG ≤ sisa Qty SJ yang belum dicek; NG > 0 wajib ada keterangan.
-- Kirim material ≤ stok Good (Good QC − dikirim + retur).
+- Diecut ≤ Good QC yang belum didiecut; QC ulang (Good + NG) ≤ hasil diecut yang belum dicek.
+- Kirim material ≤ stok Good (PCS: Good QC; SHEET: Good QC Ulang; dikurangi dikirim, ditambah retur).
 - Retur ≤ sisa material di produksi, tanggal retur tidak boleh sebelum tanggal request.
 - Data yang sudah dipakai tahap berikutnya tidak bisa dihapus/diubah sehingga merusak angka.
 
 ## Rumus balance
 - **Balance PO** = Qty PO − Total Incoming (positif = masih kurang, negatif = kirim lebih).
 - **Sisa dicek QC** = Qty SJ − Good − NG.
-- **Stok siap kirim** = Good − Dikirim + Retur.
+- **Stok siap kirim** = Good (QC, atau QC Ulang untuk sheet) − Dikirim + Retur.
 - **Balance Supply** = Dikirim − Retur.
 - **Balance Finish Good** = (Dikirim − Retur) − Booklet/Cones jadi.
-  *Asumsi: 1 booklet/cones memakai 1 satuan material. Jika rumus di perusahaan Anda berbeda, ubah kolom `fg_balance` di view `v_po_summary` pada `schema.sql`.*
+  *Asumsi: 1 booklet/cones memakai 1 pcs material (Filter Book: leaves × 2 pcs). Jika rumus di perusahaan Anda berbeda, ubah kolom `fg_balance` di view `v_po_summary` pada `schema.sql`.*
 
 ## Tips
 - Cadangan data: Supabase → Database → Backups, atau tombol **CSV** di setiap tabel.
