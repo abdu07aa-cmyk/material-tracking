@@ -36,6 +36,12 @@ Barang yang datang dalam bentuk **sheet** melewati tahap tambahan. Barang berben
 - Di **Finish Good**, isi jumlah filter book jadi. Balance otomatis memotong jumlah jadi × pcs per filter book, dan form menampilkan sisa leaves serta perkiraan buku yang masih bisa dibuat.
 - **Update:** jalankan ulang seluruh `schema.sql`, lalu ubah item Filter Book yang sudah ada dan isi ulang leaves-nya (artinya berubah menjadi pasangan kiri+kanan). SJ sheet lama kini perlu Diecut + QC Ulang sebelum stoknya bisa dikirim.
 
+## Master Barang, Badge, dan Riwayat Perubahan
+- **Master Barang & Brand** (menu Admin → tab Master): daftar Jenis Barang dan Brand yang muncul sebagai pilihan di form PI. Penulisan di PI otomatis diseragamkan mengikuti daftar (huruf besar/kecil dan spasi ganda), jadi "booklet" dan "Booklet" tidak terhitung terpisah di Rekap Barang. Bila Leader Gudang mengetik nama yang belum ada, aplikasi menanyakan dulu agar salah ketik tidak menjadi data baru. Admin bisa menambah dan menghapus pilihan; menghapus dari daftar tidak mengubah PI yang sudah ada.
+- **Badge tugas menunggu** (angka merah di menu): QC = SJ menunggu QC + hasil diecut menunggu QC ulang; Diecut = SJ sheet menunggu diecut; Supply = item yang punya stok siap kirim; Finish Good = item yang masih punya material di produksi untuk dijadikan barang jadi.
+- **Riwayat Perubahan** (menu Admin → tab Riwayat, khusus Admin): mencatat otomatis siapa menambah, mengubah, dan menghapus data, kapan, dan nilai sebelum → sesudah. Dicatat oleh database sehingga tidak bisa diubah dari aplikasi. Menampilkan 500 perubahan terakhir.
+- **Update:** jalankan ulang seluruh `schema.sql`. Jenis barang dan brand yang sudah pernah diinput otomatis masuk ke master. Riwayat perubahan mulai tercatat sejak `schema.sql` dijalankan.
+
 ## Satuan PCS dan SHEET
 Barang dari supplier bisa datang dalam PCS atau masih berbentuk sheet (1 sheet berisi 3, 4, 6, 8 pcs atau lebih, bebas per material/SJ).
 - Semua jumlah dan saldo di database dihitung dalam **PCS**, jadi balance Gudang → QC → Supply → Finish Good selalu sinkron.
@@ -74,7 +80,7 @@ Setelah mengganti logo/manifest, hapus pintasan lama lalu pasang ulang agar logo
 3. **Authentication → Providers → Email**: matikan **Allow new users to sign up** (agar hanya akun dari Admin yang bisa masuk). Matikan juga "Confirm email" bila Anda membuat user lewat dashboard dengan Auto Confirm.
 4. **Authentication → Users → Add user**: buat akun untuk setiap orang (email + password, centang *Auto Confirm User*).
    - **Akun pertama yang dibuat otomatis menjadi Admin.** Buat akun Anda dulu.
-5. Login ke aplikasi sebagai Admin → menu **Pengguna** → atur role: Leader Gudang, Leader QC, **Leader Diecut**, Leader Supply Material, Leader Finish Good/Produksi.
+5. Login ke aplikasi sebagai Admin → menu **Admin → Pengguna** → atur role: Leader Gudang, Leader QC, **Leader Diecut**, Leader Supply Material, Leader Finish Good/Produksi.
 6. **Project Settings → API**: salin *Project URL* dan *anon public key*.
 
 ### 2. Config
