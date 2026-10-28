@@ -246,7 +246,26 @@ async function save(table, payload, id) {
   const { data, error } = await r.select();
   if (error) throw error;
   if (!data || !data.length) throw new Error('Data tidak tersimpan. Anda mungkin tidak punya hak akses.');
+  setTimeout(refreshBadges, 300);
   return data[0];
+}
+let badgeBusy = false;
+async function refreshBadges() {
+  if (badgeBusy || !state.profile) return; badgeBusy = true;
+  try {
+    const [rc, dj, po] = await Promise.all([q('v_receipts', [['receipt_date', true]]), q('v_diecut_jobs', [['job_date', true]]), q('v_po_summary', [['pi_no', true]])]);
+    const n = {
+      qc: rc.filter(r => Number(r.qc_balance) > 0).length + dj.filter(j => Number(j.qc2_balance) > 0).length,
+      diecut: rc.filter(r => r.unit === 'SHEET' && Number(r.dc_waiting) > 0).length,
+      supply: po.filter(p => Number(p.stock_ready) > 0).length,
+      fg: po.filter(p => Number(p.supplied_total) > 0 && Number(p.fg_balance) > 0).length
+    };
+    document.querySelectorAll('[data-nav]').forEach(a => {
+      a.querySelector('.bdg')?.remove();
+      const c = n[a.dataset.nav];
+      if (c > 0) a.insertAdjacentHTML('beforeend', `<em class="bdg" title="${c} menunggu">${c > 99 ? '99+' : c}</em>`);
+    });
+  } catch (e) { /* badge hanya pelengkap */ } finally { badgeBusy = false; }
 }
 async function del(table, id) {
   const { data, error } = await sb.from(table).delete().eq('id', id).select();
@@ -391,15 +410,24 @@ const UNIT_FIELDS = [
     showIf: v => v.unit === 'SHEET' }
 ];
 
-function poForm(row, rl, pre) {
+async function loadMaster() {
+  let m = [];
+  try { m = await q('master_data', [['name', true]]); } catch (e) { /* tabel master belum ada: pakai daftar bawaan */ }
+  const pick = k => m.filter(x => x.kind === k).map(x => x.name);
+  return { item: [...new Set([...pick('item'), ...ITEM_NAMES])], brand: pick('brand') };
+}
+const sameName = (a, b) => a.replace(/\s+/g, ' ').trim().toLowerCase() === b.replace(/\s+/g, ' ').trim().toLowerCase();
+
+async function poForm(row, rl, pre) {
   const sheet = !!row && row.unit === 'SHEET';
-  const names = [...new Set([...ITEM_NAMES, ...(poForm.names || [])])];
+  const master = await loadMaster();
+  const names = [...new Set([...master.item, ...(poForm.names || [])])];
   openForm({
     title: row ? 'Ubah Item PI' : (pre ? `Tambah Item · PI ${pre.pi_no}` : 'PI / PO Baru'),
     sub: 'Satu PI bisa punya banyak jenis barang (Booklet, Filter Book, Filter Cones, Display, Cover, dll). Isi satu item per jenis barang. Jumlah disimpan dalam PCS.',
     fields: [
       { name: 'pi_no', label: 'PI No', req: true, placeholder: 'mis. 210.07.26.SMB' },
-      { name: 'brand', label: 'Brand', req: true, placeholder: 'mis. SB BROWN + TIPS' },
+      { name: 'brand', label: 'Brand', req: true, list: master.brand, placeholder: 'pilih atau ketik, mis. SB BROWN + TIPS' },
       { name: 'item_name', label: 'Jenis Barang', req: true, list: names, placeholder: 'pilih atau ketik, mis. Booklet' },
       { name: 'specification', label: 'Spesifikasi Incoming Material', placeholder: 'mis. ukuran / gramasi / warna (boleh kosong)' },
       { name: 'leaves_per_book', label: 'Isi per Filter Book (leaves)', type: 'number', min: 1, req: true, list: ['32', '33', '40', '50', '60'],
@@ -422,6 +450,13 @@ function poForm(row, rl, pre) {
       hint(t);
     },
     onSubmit: async (v, again) => {
+      // Nama baru (belum ada di master) ditanyakan dulu supaya salah ketik tidak jadi jenis barang/brand baru
+      const fresh = [];
+      if (!names.some(n => sameName(n, v.item_name))) fresh.push(['Jenis Barang', v.item_name, master.item]);
+      if (!master.brand.some(n => sameName(n, v.brand)) && master.brand.length) fresh.push(['Brand', v.brand, master.brand]);
+      for (const [lbl, val, ex] of fresh) {
+        if (!(await ask(`${lbl} "${val}" belum ada di daftar master. Simpan sebagai ${lbl.toLowerCase()} baru?\n\nYang sudah ada: ${ex.slice(0, 12).join(', ') || '-'}`, 'Ya, Simpan'))) throw new Error('Dibatalkan. Pilih ' + lbl.toLowerCase() + ' dari daftar atau perbaiki ejaannya.');
+      }
       await save('po_items', {
         pi_no: v.pi_no, brand: v.brand, item_name: v.item_name, specification: v.specification || '',
         leaves_per_book: isFilterBook(v.item_name) ? v.leaves_per_book : null,
@@ -1250,9 +1285,79 @@ async function renderSummary(view) {
 }
 
 /* ---------- Pengguna (admin) ---------- */
-async function renderUsers(view) {
+async function renderAdmin(view) {
   if (!isAdmin()) { view.innerHTML = '<div class="empty"><b>Khusus Admin</b>Anda tidak punya akses ke menu ini.</div>'; return; }
-  view.innerHTML = `<div class="page-head"><div><h1>Pengguna</h1><p>Atur role setiap akun. Akun baru dibuat di Supabase → Authentication → Users.</p></div></div><div id="list"><div class="loading"><span class="spin"></span>Memuat…</div></div>`;
+  const tab = ['master', 'audit'].includes(state.seg.admin) ? state.seg.admin : 'users';
+  view.innerHTML = `<div class="page-head"><div><h1>Admin</h1><p>Kelola pengguna, daftar master barang, dan riwayat perubahan data.</p></div></div>
+    <div class="seg" id="asegs"><button data-seg="users" class="${tab === 'users' ? 'on' : ''}">Pengguna</button><button data-seg="master" class="${tab === 'master' ? 'on' : ''}">Master Barang & Brand</button><button data-seg="audit" class="${tab === 'audit' ? 'on' : ''}">Riwayat Perubahan</button></div>
+    <div id="abody"></div>`;
+  $('#asegs').onclick = e => { const b = e.target.closest('[data-seg]'); if (b) { state.seg.admin = b.dataset.seg; renderAdmin(view); } };
+  const body = $('#abody');
+  if (tab === 'master') await renderMaster(body); else if (tab === 'audit') await renderAudit(body); else await renderUsers(body);
+}
+
+/* ---------- Master Barang & Brand ---------- */
+async function renderMaster(view) {
+  view.innerHTML = '<div class="loading"><span class="spin"></span>Memuat…</div>';
+  let rows;
+  try { rows = await q('master_data', [['name', true]]); } catch (e) { view.innerHTML = `<div class="errbox">${esc(errMsg(e))}</div>`; return; }
+  const box = (kind, title) => `<div class="mbox"><div class="sec-title">${title}</div>
+    <form class="madd" data-kind="${kind}"><input type="text" placeholder="Tambah ${title.toLowerCase()} baru…" required><button class="btn primary" type="submit">Tambah</button></form>
+    <div class="chips">${rows.filter(x => x.kind === kind).map(x => `<span class="chip">${esc(x.name)}<button type="button" data-del="${x.id}" aria-label="Hapus ${esc(x.name)}">&times;</button></span>`).join('') || '<span class="mut">Belum ada</span>'}</div></div>`;
+  view.innerHTML = `<p class="mut" style="margin:0 0 10px">Daftar ini muncul sebagai pilihan di form PI. Penulisan di PI otomatis diseragamkan mengikuti daftar (huruf besar/kecil dan spasi ganda), sehingga "booklet" dan "Booklet" tidak terhitung terpisah. Menghapus dari daftar tidak mengubah data PI yang sudah ada.</p>
+    <div class="mgrid">${box('item', 'Jenis Barang')}${box('brand', 'Brand')}</div>`;
+  view.onsubmit = async e => {
+    const f = e.target.closest('.madd'); if (!f) return; e.preventDefault();
+    const name = f.querySelector('input').value.replace(/\s+/g, ' ').trim(); if (!name) return;
+    if (rows.some(x => x.kind === f.dataset.kind && sameName(x.name, name))) return toast('Sudah ada di daftar', 'err');
+    try { await save('master_data', { kind: f.dataset.kind, name }); toast('Ditambahkan'); renderMaster(view); } catch (err) { toast(errMsg(err), 'err'); }
+  };
+  view.onclick = async e => {
+    const b = e.target.closest('[data-del]'); if (!b) return;
+    if (!(await ask('Hapus dari daftar pilihan? Data PI yang sudah ada tidak berubah.'))) return;
+    try { await del('master_data', b.dataset.del); toast('Dihapus'); renderMaster(view); } catch (err) { toast(errMsg(err), 'err'); }
+  };
+}
+
+/* ---------- Riwayat Perubahan (audit log) ---------- */
+const AUDIT_TBL = { po_items: 'Item PI', receipts: 'Penerimaan SJ', qc_inspections: 'QC Incoming', diecut_jobs: 'Diecut', qc2_inspections: 'QC Ulang', supply_issues: 'Pengiriman Supply', supply_returns: 'Retur Supply', fg_receipts: 'Finish Good', master_data: 'Master', profiles: 'Pengguna' };
+const AUDIT_OP = { INSERT: 'Tambah', UPDATE: 'Ubah', DELETE: 'Hapus' };
+const AUDIT_SKIP = new Set(['id', 'created_at', 'updated_at', 'created_by']);
+function auditSummary(r) {
+  const o = r.old_data || {}, n = r.new_data || {};
+  const fmt = x => x == null ? '–' : String(x);
+  if (r.op === 'UPDATE') {
+    const ch = Object.keys(n).filter(k => !AUDIT_SKIP.has(k) && JSON.stringify(n[k]) !== JSON.stringify(o[k]));
+    return ch.map(k => `<b>${esc(k)}</b>: ${esc(fmt(o[k]))} → ${esc(fmt(n[k]))}`).join('<br>');
+  }
+  const d = r.op === 'DELETE' ? o : n;
+  return Object.keys(d).filter(k => !AUDIT_SKIP.has(k) && d[k] != null && d[k] !== '').slice(0, 7).map(k => `<b>${esc(k)}</b>: ${esc(fmt(d[k]))}`).join(' · ');
+}
+async function renderAudit(view) {
+  view.innerHTML = '<div class="loading"><span class="spin"></span>Memuat riwayat…</div>';
+  let rows;
+  try {
+    const { data, error } = await sb.from('audit_log').select('*').order('at', { ascending: false }).limit(500);
+    if (error) throw error; rows = data || [];
+  } catch (e) { view.innerHTML = `<div class="errbox">${esc(errMsg(e))}</div>`; return; }
+  view.innerHTML = `<div class="toolbar"><div class="search">${icon('search', 18)}<input id="aq" type="search" placeholder="Cari pengguna, tabel, isi perubahan…"></div></div>
+    <div class="cnt" id="acnt"></div><div id="atbl"></div><p class="mut" style="font-size:12px;margin-top:8px">Menampilkan 500 perubahan terakhir. Setiap tambah, ubah, dan hapus data tercatat otomatis oleh database dan tidak bisa diubah dari aplikasi.</p>`;
+  const draw = () => {
+    const k = $('#aq').value.trim().toLowerCase();
+    const f = k ? rows.filter(r => [r.actor_email, AUDIT_TBL[r.tbl] || r.tbl, AUDIT_OP[r.op], JSON.stringify(r.new_data || r.old_data)].join(' ').toLowerCase().includes(k)) : rows;
+    $('#acnt').textContent = f.length + ' perubahan';
+    $('#atbl').innerHTML = f.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Waktu</th><th>Pengguna</th><th>Aksi</th><th>Data</th><th>Isi</th></tr></thead><tbody>${f.map(r => `<tr>
+      <td style="white-space:nowrap">${esc(new Date(r.at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }))}</td>
+      <td>${esc(r.actor_email || 'sistem')}</td>
+      <td><span class="pill ${r.op === 'DELETE' ? 'err' : r.op === 'INSERT' ? 'ok' : 'warn'}">${AUDIT_OP[r.op] || r.op}</span></td>
+      <td>${esc(AUDIT_TBL[r.tbl] || r.tbl)}</td><td style="font-size:12.5px;min-width:260px">${auditSummary(r)}</td></tr>`).join('')}</tbody></table></div>`
+      : '<div class="empty"><b>Belum ada riwayat</b></div>';
+  };
+  $('#aq').oninput = draw; draw();
+}
+
+async function renderUsers(view) {
+  view.innerHTML = `<p class="mut" style="margin:0 0 10px">Atur role setiap akun. Akun baru dibuat di Supabase → Authentication → Users.</p><div id="list"><div class="loading"><span class="spin"></span>Memuat…</div></div>`;
   let rows;
   try { rows = await q('profiles', [['created_at', true]]); } catch (e) { $('#list').innerHTML = `<div class="errbox">${esc(errMsg(e))}</div>`; return; }
   $('#list').innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Nama</th><th>Email</th><th>Role</th></tr></thead><tbody>${rows.map(r => `<tr>
@@ -1275,7 +1380,7 @@ const NAV = [
   { id: 'diecut', label: 'Diecut', icon: 'cut' },
   { id: 'supply', label: 'Supply', icon: 'truck' },
   { id: 'fg', label: 'Finish Good', icon: 'pkg' },
-  { id: 'users', label: 'Pengguna', icon: 'users', admin: true }
+  { id: 'users', label: 'Admin', icon: 'users', admin: true }
 ];
 
 function logoHTML() {
@@ -1307,8 +1412,9 @@ async function route() {
   window.scrollTo(0, 0);
   try {
     if (page === 'dashboard') await renderDashboard(view);
-    else if (page === 'users') await renderUsers(view);
+    else if (page === 'users') await renderAdmin(view);
     else await renderSegPage(view, DEFS[page]());
+    refreshBadges();
     if (state.profile.role === 'viewer') view.insertAdjacentHTML('afterbegin', '<div class="banner">Akun Anda belum diberi role input. Hubungi Admin untuk mengatur role (Gudang / QC / Supply / Produksi). Saat ini hanya bisa melihat data.</div>');
   } catch (e) { view.innerHTML = `<div class="errbox">${esc(errMsg(e))}</div>`; }
 }
