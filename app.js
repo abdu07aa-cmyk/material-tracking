@@ -1225,10 +1225,26 @@ async function renderSegPage(view, def) {
 }
 
 /* ---------- Dashboard ---------- */
+/* Status item PI. Selesai = barang jadi sudah mencapai Qty PI (item lama tanpa Qty PI: semua material terpakai & tidak ada yang menunggu) */
+function itemStatus(p) {
+  const n = k => Number(p[k] || 0), fgTarget = p.qty_pi != null ? Number(p.qty_pi) : null;
+  const done = fgTarget != null ? n('fg_booklet') >= fgTarget
+    : n('total_incoming') >= n('qty_po') && n('supplied_total') > 0 && n('fg_balance') <= 0 && n('qc_pending') <= 0 && n('dc_waiting') <= 0 && n('qc2_pending') <= 0;
+  if (done) return { done: true, label: 'Selesai', tone: 'ok' };
+  if (n('total_incoming') <= 0) return { done: false, label: 'Belum ada barang masuk', tone: 'gray' };
+  if (n('qc_pending') > 0) return { done: false, label: 'Proses QC', tone: 'warn' };
+  if (n('dc_waiting') > 0 || n('qc2_pending') > 0) return { done: false, label: 'Proses Diecut / QC ulang', tone: 'warn' };
+  if (n('supplied_total') <= 0) return { done: false, label: 'Menunggu dikirim ke produksi', tone: 'warn' };
+  return { done: false, label: 'Produksi berjalan', tone: 'warn' };
+}
+const piGroups = rows => { const g = new Map(); groupSort(rows).forEach(r => { const k = r.pi_no + '|' + r.brand; if (!g.has(k)) g.set(k, []); g.get(k).push(r); }); return [...g.values()]; };
+const piDone = items => items.every(p => itemStatus(p).done);
+
 function groupHTML(rows) {
   const g = new Map();
   groupSort(rows).forEach(r => { const k = r.pi_no + '|' + r.brand; if (!g.has(k)) g.set(k, []); g.get(k).push(r); });
-  return [...g.values()].map(items => `<section class="pi-group"><div class="pi-head"><b>PI ${esc(items[0].pi_no)}</b><span>${esc(items[0].brand)}</span><em>${items.length} item</em></div>
+  return [...g.values()].map(items => `<section class="pi-group"><div class="pi-head"><b>PI ${esc(items[0].pi_no)}</b><span>${esc(items[0].brand)}</span><em>${items.length} item</em>${
+      piDone(items) ? '<span class="pill ok">PI SELESAI</span>' : `<span class="pill warn">BERJALAN · ${items.filter(p => itemStatus(p).done).length}/${items.length} item selesai</span>`}</div>
     <div class="po-grid">${items.map(poCard).join('')}</div></section>`).join('');
 }
 
@@ -1236,13 +1252,13 @@ function poCard(p) {
   const pct = Number(p.qty_po) ? Math.min(100, Number(p.total_incoming) / Number(p.qty_po) * 100) : 0;
   return `<div class="po">
     <div class="po-h"><div><b>${esc(p.item_name || p.specification || p.pi_no)}</b><small>PI ${esc(p.pi_no)}${p.item_name && p.specification ? ' · ' + esc(p.specification) : ''}</small></div>
-      <div>${Number(p.balance_po) > 0 ? `<span class="pill warn">Sisa PO ${num(p.balance_po)}</span>` : Number(p.balance_po) < 0 ? `<span class="pill err">Lebih ${num(-p.balance_po)}</span>` : '<span class="pill ok">PO lengkap</span>'}</div></div>
+      <div>${(s => `<span class="pill ${s.tone}">${s.label}</span> `)(itemStatus(p))}${Number(p.balance_po) > 0 ? `<span class="pill warn">Sisa PO ${num(p.balance_po)}</span>` : Number(p.balance_po) < 0 ? `<span class="pill err">Lebih ${num(-p.balance_po)}</span>` : '<span class="pill ok">PO lengkap</span>'}</div></div>
     <div class="stages">
       <div class="st g"><em>Gudang</em><strong>${num(p.total_incoming)}</strong><div class="bar"><i style="width:${pct}%"></i></div><small>dari PO ${num(p.qty_po)}</small></div>
       <div class="st q"><em>QC</em><strong>${num(p.good_total)} <span style="font-size:12px;font-weight:600">good</span></strong><small>NG ${num(p.ng_total)} · menunggu ${num(p.qc_pending)}</small></div>
       ${p.has_sheet ? `<div class="st d"><em>Diecut</em><strong>${num(p.dc_out)} <span style="font-size:12px;font-weight:600">pcs hasil</span></strong><small>Sheet ${num(p.dc_sheets)} · tunggu diecut ${num(p.dc_waiting)} pcs<br>QC ulang: good ${num(p.qc2_good)} · NG ${num(p.qc2_ng)} · tunggu ${num(p.qc2_pending)}</small></div>` : ''}
       <div class="st s"><em>Supply</em><strong>${num(p.at_production)} <span style="font-size:12px;font-weight:600">di produksi</span></strong><small>Kirim ${num(p.supplied_total)} · retur ${num(p.returned_total)}<br>Stok siap ${num(p.stock_ready)}</small></div>
-      <div class="st f"><em>Finish Good</em><strong>${num(p.fg_booklet)} <span style="font-size:12px;font-weight:600">${p.leaves_per_book ? 'filter book' : 'booklet/cones'}</span></strong><small>Karton ${num(p.fg_karton)} · Display ${num(p.fg_display)}<br>Balance ${num(p.fg_balance)}</small></div>
+      <div class="st f"><em>Finish Good</em><strong>${num(p.fg_booklet)} <span style="font-size:12px;font-weight:600">${p.leaves_per_book ? 'filter book' : 'booklet/cones'}</span></strong>${p.qty_pi != null ? `<div class="bar"><i style="width:${Math.min(100, Number(p.fg_booklet) / Number(p.qty_pi) * 100)}%"></i></div>` : ''}<small>${p.qty_pi != null ? `dari Qty PI ${num(p.qty_pi)} · ` : ''}Karton ${num(p.fg_karton)} · Display ${num(p.fg_display)}<br>Balance ${num(p.fg_balance)}</small></div>
     </div></div>`;
 }
 
@@ -1460,19 +1476,25 @@ async function renderSummary(view) {
   let rows;
   try { rows = await q('v_po_summary'); } catch (e) { view.insertAdjacentHTML('beforeend', ''); view.querySelector('.loading').outerHTML = `<div class="errbox">${esc(errMsg(e))}</div>`; return; }
   const sum = k => rows.reduce((a, r) => a + Number(r[k] || 0), 0);
-  const kp = [['Total PI', new Set(rows.map(r => r.pi_no + '|' + r.brand)).size, 'g'], ['Total Incoming', num(sum('total_incoming')), 'g'], ['Menunggu QC', num(sum('qc_pending')), 'q'], ['Menunggu Diecut', num(sum('dc_waiting')), 'd'], ['Menunggu QC Ulang', num(sum('qc2_pending')), 'q'],
+  const grp = piGroups(rows), nDone = grp.filter(piDone).length;
+  const kp = [['PI Berjalan', grp.length - nDone, 'q'], ['PI Selesai', nDone, 'f'], ['Total Incoming', num(sum('total_incoming')), 'g'], ['Menunggu QC', num(sum('qc_pending')), 'q'], ['Menunggu Diecut', num(sum('dc_waiting')), 'd'], ['Menunggu QC Ulang', num(sum('qc2_pending')), 'q'],
     ['Good', num(sum('good_total')), 'q'], ['NG', num(sum('ng_total')), 'r'], ['Stok Siap Kirim', num(sum('stock_ready')), 's'],
     ['Di Produksi', num(sum('at_production')), 's'], ['Booklet / Cones Jadi', num(sum('fg_booklet')), 'f']];
   view.querySelector('.loading').outerHTML = `
     <div class="kpis">${kp.map(([l, v, c]) => `<div class="kpi ${c}"><span>${l}</span><b>${v}</b></div>`).join('')}</div>
     <div class="toolbar"><div class="search">${icon('search', 18)}<input id="q" type="search" placeholder="Cari PI / brand…"></div></div>
+    <div class="seg" id="pf"><button data-f="all">Semua</button><button data-f="run">Berjalan</button><button data-f="done">Selesai</button></div>
     <div class="sec-title">Progres per PI</div><div id="pos"></div>`;
   const draw = () => {
     const k = $('#q').value.trim().toLowerCase();
-    const f = k ? rows.filter(r => [r.pi_no, r.brand, r.item_name, r.specification].join(' ').toLowerCase().includes(k)) : rows;
+    let f = k ? rows.filter(r => [r.pi_no, r.brand, r.item_name, r.specification].join(' ').toLowerCase().includes(k)) : rows;
+    const pf = state.piFilter || 'all';
+    document.querySelectorAll('#pf [data-f]').forEach(b => b.classList.toggle('on', b.dataset.f === pf));
+    if (pf !== 'all') f = piGroups(f).filter(items => piDone(items) === (pf === 'done')).flat();
     $('#pos').innerHTML = f.length ? groupHTML(f) : '<div class="empty" style="grid-column:1/-1"><b>Belum ada data PI</b>Leader Gudang dapat menambah PI di menu Gudang.</div>';
   };
   $('#q').oninput = draw; draw();
+  $('#pf').onclick = e => { const b = e.target.closest('[data-f]'); if (b) { state.piFilter = b.dataset.f; draw(); } };
 }
 
 /* ---------- Pengguna (admin) ---------- */
