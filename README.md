@@ -42,6 +42,16 @@ Barang yang datang dalam bentuk **sheet** melewati tahap tambahan. Barang berben
 - **Riwayat Perubahan** (menu Admin → tab Riwayat, khusus Admin): mencatat otomatis siapa menambah, mengubah, dan menghapus data, kapan, dan nilai sebelum → sesudah. Dicatat oleh database sehingga tidak bisa diubah dari aplikasi. Menampilkan 500 perubahan terakhir.
 - **Update:** jalankan ulang seluruh `schema.sql`. Jenis barang dan brand yang sudah pernah diinput otomatis masuk ke master. Riwayat perubahan mulai tercatat sejak `schema.sql` dijalankan.
 
+## Request Material (Produksi → Supply)
+Alur baru: **Produksi request dulu, Supply mengirim sesuai request.**
+- **Leader Produksi** (menu **Produksi → Request Material**) membuat request per item PI. Boleh bertahap (partial), tetapi **total request tidak boleh melebihi Qty PI**. Form menampilkan sisa yang masih boleh diminta.
+- **Leader Supply** melihat tab **Request Masuk** dan menekan **Kirim**. Boleh dikirim sebagian; sisa request tetap menunggu. Qty kirim tidak boleh melebihi sisa request dan stok GOOD. Pengiriman baru hanya bisa dibuat dari sebuah request.
+- Status request: Menunggu Supply, Sebagian (sisa N), Terpenuhi, atau Ditutup. Produksi bisa menutup request (ubah → Status Request) bila sisanya tidak dikejar lagi; sisa itu kembali menjadi kuota request.
+- **Retur barang NG** dilakukan Produksi (tab **Retur ke Supply**, pilih kondisi *Rusak / NG*). Barang NG yang diretur mengembalikan kuota request sebesar qty-nya, sehingga Produksi boleh meminta penggantinya. Pilihan **Minta Barang Pengganti = Ya** langsung membuat request pengganti.
+- Pengiriman lama (sebelum fitur ini) tetap dihitung sebagai permintaan yang sudah terpenuhi.
+- Badge menu **Supply** menunjukkan jumlah request yang menunggu dikirim.
+- **Update:** jalankan ulang seluruh `schema.sql`, lalu ganti `app.js`.
+
 ## Satuan PCS dan SHEET
 Barang dari supplier bisa datang dalam PCS atau masih berbentuk sheet (1 sheet berisi 3, 4, 6, 8 pcs atau lebih, bebas per material/SJ).
 - Semua jumlah dan saldo di database dihitung dalam **PCS**, jadi balance Gudang → QC → Supply → Finish Good selalu sinkron.
@@ -100,14 +110,15 @@ Edit `config.js`, isi `SUPABASE_URL` dan `SUPABASE_ANON_KEY`. Jangan pakai `serv
 | Leader Gudang | Semua | PI & Penerimaan SJ | Tidak |
 | Leader QC | Semua | Hasil QC & QC Ulang | Tidak |
 | Leader Diecut | Semua | Proses Diecut | Tidak |
-| Leader Supply | Semua | Pengiriman & Retur | Tidak |
-| Leader Produksi | Semua | Finish Good | Tidak |
+| Leader Supply | Semua | Pengiriman (dari request) & Retur | Tidak |
+| Leader Produksi | Semua | Request Material, Retur, Finish Good | Tidak |
 | Viewer | Semua | Tidak ada | Tidak |
 
 ## Aturan validasi (dijaga database)
 - No SJ tidak boleh dobel pada PI yang sama; PI + Brand + Spesifikasi tidak boleh dobel.
 - QC: Good + NG ≤ sisa Qty SJ yang belum dicek; NG > 0 wajib ada keterangan.
 - Diecut ≤ Good QC yang belum didiecut; QC ulang (Good + NG) ≤ hasil diecut yang belum dicek.
+- Total request per item ≤ Qty PI (ditambah retur NG); kirim ≤ sisa request.
 - Kirim material ≤ stok Good (PCS: Good QC; SHEET: Good QC Ulang; dikurangi dikirim, ditambah retur).
 - Retur ≤ sisa material di produksi, tanggal retur tidak boleh sebelum tanggal request.
 - Data yang sudah dipakai tahap berikutnya tidak bisa dihapus/diubah sehingga merusak angka.
