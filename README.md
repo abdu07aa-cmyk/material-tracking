@@ -52,6 +52,17 @@ Alur baru: **Produksi request dulu, Supply mengirim sesuai request.**
 - Badge menu **Supply** menunjukkan jumlah request yang menunggu dikirim.
 - **Update:** jalankan ulang seluruh `schema.sql`, lalu ganti `app.js`.
 
+## Inbox (ikon lonceng di bagian atas)
+Setiap leader punya inbox berisi pekerjaan yang menunggu dirinya. Angka merah di lonceng menunjukkan jumlahnya. Ketuk sebuah pesan, aplikasi langsung membuka menu dan tab yang tepat, lalu form yang dibutuhkan terbuka.
+| Role | Isi inbox |
+|---|---|
+| Leader Supply | Request dari Produksi yang belum terpenuhi → langsung form Kirim |
+| Leader QC | SJ menunggu QC dan hasil diecut menunggu QC ulang → form QC |
+| Leader Diecut | SJ sheet yang lolos QC dan siap diecut → form Diecut |
+| Leader Gudang | SJ yang punya NG (14 hari terakhir) untuk ditindaklanjuti ke supplier |
+| Leader Produksi | Request yang baru terkirim sebagian, dan material di produksi yang belum dicatat hasil jadinya |
+Admin melihat semua. Inbox mengikuti data terbaru: pesan hilang sendiri setelah pekerjaannya selesai, dan diperbarui otomatis tiap 1 menit. Tidak perlu menjalankan SQL baru untuk fitur ini.
+
 ## Satuan PCS dan SHEET
 Barang dari supplier bisa datang dalam PCS atau masih berbentuk sheet (1 sheet berisi 3, 4, 6, 8 pcs atau lebih, bebas per material/SJ).
 - Semua jumlah dan saldo di database dihitung dalam **PCS**, jadi balance Gudang → QC → Supply → Finish Good selalu sinkron.
