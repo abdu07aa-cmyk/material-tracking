@@ -465,6 +465,7 @@ async function loadMaster() {
   const pick = k => m.filter(x => x.kind === k).map(x => x.name);
   return { item: [...new Set([...pick('item'), ...ITEM_NAMES])], brand: pick('brand') };
 }
+const reqLimit = p => (p.qty_pi != null ? (Number(p.qty_pi) + Number(p.sample_display || 0) * Number(p.isi_per_display || 0)) * (Number(p.pcs_per_book) || (p.leaves_per_book ? p.leaves_per_book * 2 : 1)) : Number(p.qty_po)) + Number(p.req_extra || 0);
 const sameName = (a, b) => a.replace(/\s+/g, ' ').trim().toLowerCase() === b.replace(/\s+/g, ' ').trim().toLowerCase();
 
 async function poForm(row, rl, pre) {
@@ -482,21 +483,31 @@ async function poForm(row, rl, pre) {
       { name: 'leaves_per_book', label: 'Isi per Filter Book (leaves)', type: 'number', min: 1, req: true, list: ['32', '33', '40', '50', '60'],
         placeholder: 'mis. 32', showIf: v => isFilterBook(v.item_name), help: '1 leaf = 1 pcs kiri + 1 pcs kanan yang dilem. Isi jumlah leaves per 1 filter book jadi.' },
       ...UNIT_FIELDS,
-      { name: 'qty_po', label: 'Qty PO', type: 'number', req: true, min: 0.01, u: true }
+      { name: 'qty_po', label: 'Qty PO (barang masuk dari supplier)', type: 'number', req: true, min: 0.01, u: true },
+      { name: 'qty_pi', label: 'Qty PI (target barang jadi)', type: 'number', min: 1, half: true, placeholder: 'mis. 1000',
+        help: 'Jumlah barang jadi sesuai PI (booklet / cones / filter book). Dasar batas request Produksi.' },
+      { name: 'isi_per_display', label: 'Isi per Display', type: 'number', min: 1, half: true, default: 25, help: '25 booklet per display; 24 bila memakai Filter Book.' },
+      { name: 'sample_display', label: 'Display untuk Sample', type: 'number', min: 0, half: true, default: 2 },
+      ...(isAdmin() ? [{ name: 'req_extra', label: 'Izin Tambahan Request (pcs, Admin)', type: 'number', min: 0, half: true, default: 0, help: 'Hanya Admin. Tambahan di luar Qty PI + sample, bila Produksi memang perlu lebih.' }] : [])
     ],
     values: row ? { ...row, pps: row.pcs_per_sheet, qty_po: sheet ? row.qty_po_input : row.qty_po } : (pre || null),
     keepUnit: !!row,
     submit2: row ? null : 'Simpan & Tambah Item Lain di PI Ini',
     onInput: (v, hint) => {
-      if (!isFilterBook(v.item_name)) return hint();
-      const L = Number(v.leaves_per_book), k = Number(v.pps);
+      const fb = isFilterBook(v.item_name), L = Number(v.leaves_per_book), k = Number(v.pps);
+      let lim = '';
+      if (v.qty_pi > 0) {
+        const per = fb && L > 0 ? L * 2 : 1, smp = (v.sample_display || 0) * (v.isi_per_display || 0);
+        lim = `<b>Batas request Produksi:</b> (${num(v.qty_pi)} + sample ${num(smp)}) = ${num(v.qty_pi + smp)} barang jadi` + (per > 1 ? ` × ${num(per)} pcs = <b>${num(Math.round((v.qty_pi + smp) * per))} pcs</b>` : '') + ((v.req_extra || 0) > 0 ? ` + izin tambahan ${num(v.req_extra)}` : '');
+      } else lim = 'Qty PI belum diisi: batas request Produksi memakai Qty PO.';
+      if (!fb) return hint(lim);
       let t = 'Filter Book datang dalam sheet: 1 sheet = kiri + kanan (mis. 45 kiri + 45 kanan = 90 pcs = 45 leaves). Pilih satuan SHEET dan isi per sheet 90. Setelah QC, sheet masuk Diecut.';
       if (v.unit === 'SHEET' && k > 0 && L > 0) {
         const lv = k / 2, bk = Math.floor(lv / L);
         t += `<br>1 sheet (${num(k)} pcs) = ${num(lv)} leaves = ${num(bk)} filter book @${num(L)} leaves, sisa ${num(lv - bk * L)} leaves (digabung ke sheet berikutnya).`;
         if (v.qty_po > 0) t += `<br><b>Estimasi: ${num(v.raw.qty_po)} sheet = ${num(v.qty_po)} pcs = ${num(v.qty_po / 2)} leaves ≈ ${num(Math.floor(v.qty_po / (2 * L)))} filter book @${num(L)} leaves</b>`;
       }
-      hint(t);
+      hint(t + '<br>' + lim);
     },
     onSubmit: async (v, again) => {
       // Nama baru (belum ada di master) ditanyakan dulu supaya salah ketik tidak jadi jenis barang/brand baru
@@ -509,7 +520,9 @@ async function poForm(row, rl, pre) {
       await save('po_items', {
         pi_no: v.pi_no, brand: v.brand, item_name: v.item_name, specification: v.specification || '',
         leaves_per_book: isFilterBook(v.item_name) ? v.leaves_per_book : null,
-        qty_po: v.qty_po, unit: v.unit, pcs_per_sheet: v.unit === 'SHEET' ? v.pps : null, qty_po_input: v.raw.qty_po
+        qty_po: v.qty_po, unit: v.unit, pcs_per_sheet: v.unit === 'SHEET' ? v.pps : null, qty_po_input: v.raw.qty_po,
+        qty_pi: v.qty_pi, isi_per_display: v.isi_per_display, sample_display: v.sample_display ?? 2,
+        ...(isAdmin() ? { req_extra: v.req_extra || 0 } : {})
       }, row?.id);
       toast(again ? 'Item tersimpan. Isi item berikutnya.' : 'Item PI tersimpan');
       rl();
@@ -620,7 +633,7 @@ async function requestForm(row, pre, rl) {
   const own = row ? (row.closed ? Number(row.qty_sent) : Math.max(Number(row.qty_requested), Number(row.qty_sent))) : 0;
   openForm({
     title: row ? 'Ubah Request Material' : 'Request Material ke Supply',
-    sub: 'Boleh diminta bertahap (partial), tetapi total request tidak boleh melebihi Qty PI.',
+    sub: 'Boleh diminta bertahap (partial), tetapi total request tidak boleh melebihi Qty PI + display sample.',
     fields: [
       { name: 'po_item_id', label: 'PI / Material', type: 'select', req: true, disabled: !!row,
         options: list.map(p => ({ v: p.id, l: `${poLabel(p)} (boleh diminta ${num(Number(qm[p.id]?.req_available || 0))} pcs)` })) },
@@ -640,13 +653,13 @@ async function requestForm(row, pre, rl) {
       if (!p) return hint();
       const avail = Number(qm[p.id]?.req_available || 0) + own;
       const over = v.qty_requested != null && v.qty_requested > avail;
-      hint(`Qty PI <b>${num(p.qty_po)}</b> · Sudah diminta <b>${num(Number(p.qty_po) - avail)}</b> · Masih boleh diminta <b>${num(avail)}</b> (pcs)` +
-        (over ? `<br>⚠ Melebihi Qty PI sebanyak ${num(v.qty_requested - avail)} pcs.` : ''), over ? 'warn' : 'info');
+      hint(`Batas request (Qty PI + sample) <b>${num(Number(qm[p.id]?.req_limit))}</b> · Sudah diminta <b>${num(Number(qm[p.id]?.req_limit) - avail)}</b> · Masih boleh diminta <b>${num(avail)}</b> (pcs)` +
+        (over ? `<br>⚠ Melebihi batas Qty PI + sample sebanyak ${num(v.qty_requested - avail)} pcs. Hubungi Admin bila perlu tambahan.` : ''), over ? 'warn' : 'info');
     },
     onSubmit: async v => {
       const p = by[v.po_item_id];
       const avail = Number(qm[p.id]?.req_available || 0) + own;
-      if (!(v.closed === 'Y') && v.qty_requested > avail) throw new Error(`Request melebihi Qty PI. Masih boleh diminta ${num(avail)} pcs.`);
+      if (!(v.closed === 'Y') && v.qty_requested > avail) throw new Error(`Request melebihi batas Qty PI + sample. Masih boleh diminta ${num(avail)} pcs. Hubungi Admin bila perlu tambahan.`);
       await save('material_requests', { po_item_id: v.po_item_id, request_date: v.request_date, qty_requested: v.qty_requested, closed: v.closed === 'Y', notes: v.notes }, row?.id);
       toast('Request tersimpan'); rl();
     }
@@ -955,11 +968,11 @@ const DEFS = {
         load: async () => {
           const rows = groupSort(await q('v_po_summary'));
           poForm.names = [...new Set(rows.map(p => p.item_name).filter(Boolean))];
-          return rows.map(p => ({ ...p, po_input: fmtIn(p.unit, p.qty_po_input, p.pcs_per_sheet), lpb_text: p.leaves_per_book ? `${num(p.leaves_per_book)} leaves` : '' }));
+          return rows.map(p => ({ ...p, po_input: fmtIn(p.unit, p.qty_po_input, p.pcs_per_sheet), lpb_text: p.leaves_per_book ? `${num(p.leaves_per_book)} leaves` : '', req_limit: reqLimit(p) }));
         },
         cols: [
           { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' }, { label: 'Spesifikasi', k: 'specification' },
-          { label: 'Satuan PO', k: 'po_input' }, { label: 'Isi Filter Book', k: 'lpb_text' }, { label: 'Qty PO (pcs)', k: 'qty_po', t: 'n', cls: 'num' }, { label: 'Total Incoming', k: 'total_incoming', t: 'n', cls: 'num' },
+          { label: 'Satuan PO', k: 'po_input' }, { label: 'Isi Filter Book', k: 'lpb_text' }, { label: 'Qty PO (pcs)', k: 'qty_po', t: 'n', cls: 'num' }, { label: 'Qty PI', k: 'qty_pi', t: 'n', cls: 'num' }, { label: 'Batas Request (pcs)', k: 'req_limit', t: 'n', cls: 'num' }, { label: 'Total Incoming', k: 'total_incoming', t: 'n', cls: 'num' },
           { label: 'Balance', k: 'balance_po', t: 'b', cls: 'num' }
         ],
         add: { label: 'PI / Item Baru', stage: 'gudang', run: rl => poForm(null, rl) },
