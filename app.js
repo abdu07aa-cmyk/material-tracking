@@ -300,20 +300,9 @@ async function refreshBadges() {
   if (badgeBusy || !state.profile) return; badgeBusy = true;
   try {
     const [rc, dj, po, rq] = await Promise.all([q('v_receipts', [['receipt_date', true]]), q('v_diecut_jobs', [['job_date', true]]), q('v_po_summary', [['pi_no', true]]), q('v_requests', [['request_date', true]]).catch(() => [])]);
-    const n = {
-      qc: rc.filter(r => Number(r.qc_balance) > 0).length + dj.filter(j => Number(j.qc2_balance) > 0).length,
-      diecut: rc.filter(r => r.unit === 'SHEET' && Number(r.dc_waiting) > 0).length,
-      supply: rq.filter(x => Number(x.outstanding) > 0).length,
-      fg: po.filter(p => Number(p.supplied_total) > 0 && Number(p.fg_balance) > 0).length
-    };
     state.inbox = buildInbox(rc, dj, po, rq);
     const bell = $('#bell');
     if (bell) { bell.querySelector('.bdg')?.remove(); if (state.inbox.length) bell.insertAdjacentHTML('beforeend', `<em class="bdg">${state.inbox.length > 99 ? '99+' : state.inbox.length}</em>`); }
-    document.querySelectorAll('[data-nav]').forEach(a => {
-      a.querySelector('.bdg')?.remove();
-      const c = n[a.dataset.nav];
-      if (c > 0) a.insertAdjacentHTML('beforeend', `<em class="bdg" title="${c} menunggu">${c > 99 ? '99+' : c}</em>`);
-    });
   } catch (e) { /* badge hanya pelengkap */ } finally { badgeBusy = false; }
 }
 async function del(table, id) {
@@ -465,7 +454,9 @@ async function loadMaster() {
   const pick = k => m.filter(x => x.kind === k).map(x => x.name);
   return { item: [...new Set([...pick('item'), ...ITEM_NAMES])], brand: pick('brand') };
 }
-const reqLimit = p => (p.qty_pi != null ? (Number(p.qty_pi) + Number(p.sample_display || 0) * Number(p.isi_per_display || 0)) * (Number(p.pcs_per_book) || (p.leaves_per_book ? p.leaves_per_book * 2 : 1)) : Number(p.qty_po)) + Number(p.req_extra || 0);
+const isDisplayItem = n => /display/i.test(n || '');
+const sampleOf = p => isDisplayItem(p.item_name) ? Number(p.sample_display || 0) : Number(p.sample_display || 0) * Number(p.isi_per_display || 0);
+const reqLimit = p => (p.qty_pi != null ? (Number(p.qty_pi) + sampleOf(p)) * (Number(p.pcs_per_book) || (p.leaves_per_book ? p.leaves_per_book * 2 : 1)) : Number(p.qty_po)) + Number(p.req_extra || 0);
 const sameName = (a, b) => a.replace(/\s+/g, ' ').trim().toLowerCase() === b.replace(/\s+/g, ' ').trim().toLowerCase();
 
 async function poForm(row, rl, pre) {
@@ -486,7 +477,7 @@ async function poForm(row, rl, pre) {
       { name: 'qty_po', label: 'Qty PO (barang masuk dari supplier)', type: 'number', req: true, min: 0.01, u: true },
       { name: 'qty_pi', label: 'Qty PI (target barang jadi)', type: 'number', min: 1, half: true, placeholder: 'mis. 1000',
         help: 'Jumlah barang jadi sesuai PI (booklet / cones / filter book). Dasar batas request Produksi.' },
-      { name: 'isi_per_display', label: 'Isi per Display', type: 'number', min: 1, half: true, default: 25, help: '25 booklet per display; 24 bila memakai Filter Book.' },
+      { name: 'isi_per_display', label: 'Isi per Display', type: 'number', min: 1, half: true, default: 25, showIf: v => !isDisplayItem(v.item_name), help: '25 booklet per display; 24 bila memakai Filter Book.' },
       { name: 'sample_display', label: 'Display untuk Sample', type: 'number', min: 0, half: true, default: 2 },
       ...(isAdmin() ? [{ name: 'req_extra', label: 'Izin Tambahan Request (pcs, Admin)', type: 'number', min: 0, half: true, default: 0, help: 'Hanya Admin. Tambahan di luar Qty PI + sample, bila Produksi memang perlu lebih.' }] : [])
     ],
@@ -497,8 +488,8 @@ async function poForm(row, rl, pre) {
       const fb = isFilterBook(v.item_name), L = Number(v.leaves_per_book), k = Number(v.pps);
       let lim = '';
       if (v.qty_pi > 0) {
-        const per = fb && L > 0 ? L * 2 : 1, smp = (v.sample_display || 0) * (v.isi_per_display || 0);
-        lim = `<b>Batas request Produksi:</b> (${num(v.qty_pi)} + sample ${num(smp)}) = ${num(v.qty_pi + smp)} barang jadi` + (per > 1 ? ` × ${num(per)} pcs = <b>${num(Math.round((v.qty_pi + smp) * per))} pcs</b>` : '') + ((v.req_extra || 0) > 0 ? ` + izin tambahan ${num(v.req_extra)}` : '');
+        const per = fb && L > 0 ? L * 2 : 1, smp = isDisplayItem(v.item_name) ? (v.sample_display || 0) : (v.sample_display || 0) * (v.isi_per_display || 0);
+        lim = `<b>Batas request Produksi:</b> (${num(v.qty_pi)} + sample ${num(smp)}) = ${num(v.qty_pi + smp)} ${isDisplayItem(v.item_name) ? 'display' : 'barang jadi'}` + (per > 1 ? ` × ${num(per)} pcs = <b>${num(Math.round((v.qty_pi + smp) * per))} pcs</b>` : '') + ((v.req_extra || 0) > 0 ? ` + izin tambahan ${num(v.req_extra)}` : '');
       } else lim = 'Qty PI belum diisi: batas request Produksi memakai Qty PO.';
       if (!fb) return hint(lim);
       let t = 'Filter Book datang dalam sheet: 1 sheet = kiri + kanan (mis. 45 kiri + 45 kanan = 90 pcs = 45 leaves). Pilih satuan SHEET dan isi per sheet 90. Setelah QC, sheet masuk Diecut.';
@@ -521,7 +512,7 @@ async function poForm(row, rl, pre) {
         pi_no: v.pi_no, brand: v.brand, item_name: v.item_name, specification: v.specification || '',
         leaves_per_book: isFilterBook(v.item_name) ? v.leaves_per_book : null,
         qty_po: v.qty_po, unit: v.unit, pcs_per_sheet: v.unit === 'SHEET' ? v.pps : null, qty_po_input: v.raw.qty_po,
-        qty_pi: v.qty_pi, isi_per_display: v.isi_per_display, sample_display: v.sample_display ?? 2,
+        qty_pi: v.qty_pi, isi_per_display: isDisplayItem(v.item_name) ? null : v.isi_per_display, sample_display: v.sample_display ?? 2,
         ...(isAdmin() ? { req_extra: v.req_extra || 0 } : {})
       }, row?.id);
       toast(again ? 'Item tersimpan. Isi item berikutnya.' : 'Item PI tersimpan');
@@ -1142,7 +1133,15 @@ const DEFS = {
           { label: 'Sisa', k: 'outstanding', t: 'b', cls: 'num' }, { label: 'Status', f: reqStatus }, { label: 'Catatan', k: 'notes' }
         ],
         add: { label: 'Request Material', stage: 'fg', run: rl => requestForm(null, null, rl) },
-        acts: stdActs('material_requests', 'fg', (r, rl) => requestForm(r, null, rl))
+        acts: r => {
+          if (isAdmin() || Number(r.qty_sent) <= 0) return stdActs('material_requests', 'fg', (x, rl) => requestForm(x, null, rl))(r);
+          // sudah diproses Supply: Produksi tidak bisa mengubah, hanya boleh menutup sisa bila belum terpenuhi
+          if (can('fg') && !r.closed && Number(r.outstanding) > 0) return [{ key: 'close', label: 'Tutup Sisa', icon: 'check', text: true, run: async rl => {
+            if (!(await ask(`Tutup request ini? Sisa ${num(r.outstanding)} pcs yang belum terkirim tidak dikejar lagi.`, 'Ya, Tutup'))) return;
+            await save('material_requests', { closed: true }, r.id); toast('Request ditutup'); rl();
+          } }];
+          return [];
+        }
       },
       {
         id: 'ret', label: 'Retur ke Supply',
@@ -1266,7 +1265,7 @@ function poCard(p) {
 const REPORT = [
   { g: 'INCOMING MATERIAL DATA', c: 'g', cols: [
     { k: 'no', l: 'NO', w: 6, t: 'x' }, { k: 'pi_no', l: 'PI. NO', w: 18, t: 'x' }, { k: 'brand', l: 'BRAND', w: 22, t: 'x', al: 'left' }, { k: 'item', l: 'JENIS BARANG', w: 18, t: 'x', al: 'left' },
-    { k: 'spec', l: 'SPESIFIKASI INCOMING MATERIAL', w: 26, t: 'x', al: 'left' }, { k: 'qty_po', l: 'QTY PO', w: 12, t: 'n' },
+    { k: 'spec', l: 'SPESIFIKASI INCOMING MATERIAL', w: 26, t: 'x', al: 'left' }, { k: 'qty_po', l: 'QTY PO', w: 12, t: 'n' }, { k: 'qty_pi', l: 'QTY PI', w: 12, t: 'n' },
     { k: 'sj_no', l: 'NO. SJ / DO. NO', w: 18, t: 'x' }, { k: 'sj_input', l: 'SATUAN SJ', w: 22, t: 'x' }, { k: 'qty_sj', l: 'QTY SJ (PCS)', w: 13, t: 'n' },
     { k: 'total_in', l: 'TOTAL INCOMING MATERIAL', w: 17, t: 'n' }, { k: 'bal_po', l: 'BALANCE', w: 12, t: 'b' }] },
   { g: 'QC INCOMING MATERIAL', c: 'q', cols: [
@@ -1284,7 +1283,9 @@ const REPORT = [
     { k: 'sup_bal', l: 'BALANCE', w: 12, t: 'b' }] },
   { g: 'FINISH GOOD', c: 'f', cols: [
     { k: 'fg_date', l: 'RECEIVED DATE', w: 15, t: 'd' }, { k: 'karton', l: 'KARTON', w: 12, t: 'n' }, { k: 'display', l: 'DISPLAY', w: 12, t: 'n' },
-    { k: 'booklet', l: 'BOOKLET / CONES', w: 14, t: 'n' }, { k: 'fg_bal', l: 'BALANCE', w: 12, t: 'b' }] }
+    { k: 'booklet', l: 'BOOKLET / CONES', w: 14, t: 'n' }, { k: 'fg_bal', l: 'BALANCE', w: 12, t: 'b' }] },
+  { g: 'STATUS', c: 'st', cols: [
+    { k: 'st_item', l: 'STATUS ITEM', w: 24, t: 'x', al: 'left' }, { k: 'st_pi', l: 'STATUS PI', w: 20, t: 'x', al: 'left' }] }
 ];
 
 async function loadReport() {
@@ -1302,6 +1303,8 @@ async function loadReport() {
   const qcBy = by(qcs, 'receipt_id'), retBy = by(rets, 'issue_id'), qc2By = by(qc2s, 'receipt_id');
   const out = [];
   let piNo = 0, lastKey = null;
+  const piItems = {};
+  pos.forEach(p => { (piItems[p.pi_no + '|' + p.brand] = piItems[p.pi_no + '|' + p.brand] || []).push(p); });
   groupSort(pos).forEach(p => {
     const key = p.pi_no + '|' + p.brand, newPi = key !== lastKey;
     if (newPi) piNo++;
@@ -1312,7 +1315,9 @@ async function loadReport() {
     for (let i = 0; i < n; i++) {
       const r = R[i], s = I[i], f = F[i];
       const row = { no: i === 0 && newPi ? piNo : null, newPi: i === 0 && newPi, pi_no: p.pi_no, brand: p.brand, item: p.item_name + (p.leaves_per_book ? ` (${num(p.leaves_per_book)} leaves)` : ''), spec: p.specification,
-        qty_po: i === 0 ? p.qty_po : null, first: i === 0 };
+        qty_po: i === 0 ? p.qty_po : null, qty_pi: i === 0 ? p.qty_pi : null, first: i === 0,
+        st_item: i === 0 ? itemStatus(p).label : null,
+        st_pi: i === 0 && newPi ? (piDone(piItems[key]) ? 'PI SELESAI' : `BERJALAN (${piItems[key].filter(x => itemStatus(x).done).length}/${piItems[key].length} item selesai)`) : null };
       if (r) {
         cum += Number(r.qty_sj);
         const q_ = qcBy[r.id] || [];
