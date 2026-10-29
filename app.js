@@ -38,6 +38,7 @@ const P = {
   pkg: '<path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7M12 11v10"/>',
   users: '<circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-7 7-7s7 3 7 7"/><path d="M17 4a4 4 0 010 8M22 21c0-3-2-5-4-6"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  bell: '<path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/>',
   edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/>',
   trash: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/>',
   download: '<path d="M12 3v12M7 10l5 5 5-5M4 21h16"/>',
@@ -249,6 +250,51 @@ async function save(table, payload, id) {
   setTimeout(refreshBadges, 300);
   return data[0];
 }
+/* ---------- Inbox (notifikasi tugas per role) ---------- */
+state.inbox = [];
+function buildInbox(rc, dj, po, rq) {
+  const it = [], since = new Date(Date.now() - 14 * 864e5).toISOString().slice(0, 10);
+  rq.filter(x => Number(x.outstanding) > 0).forEach(x => {
+    it.push({ roles: ['supply'], ic: 'truck', title: `Request dari Produksi: ${poLabel(x)}`,
+      sub: `Diminta ${dt(x.request_date)} · sisa dikirim ${num(x.outstanding)} pcs` + (Number(x.qty_sent) > 0 ? ` (sudah terkirim ${num(x.qty_sent)})` : ''),
+      page: 'supply', seg: 'reqin', open: (rl) => issueFromRequest(x, rl) });
+    if (Number(x.qty_sent) > 0) it.push({ roles: ['produksi'], ic: 'truck', title: `Request sebagian terkirim: ${poLabel(x)}`,
+      sub: `Terkirim ${num(x.qty_sent)} dari ${num(x.qty_requested)} pcs · sisa ${num(x.outstanding)} menunggu Supply`, page: 'fg', seg: 'req' });
+  });
+  rc.filter(r => Number(r.qc_balance) > 0).forEach(r => it.push({ roles: ['qc'], ic: 'check', title: `SJ ${r.sj_no} menunggu QC`,
+    sub: `${poLabel(r)} · sisa ${num(r.qc_balance)} pcs`, page: 'qc', seg: 'wait', open: rl => qcForm(null, r, rl) }));
+  dj.filter(j => Number(j.qc2_balance) > 0).forEach(j => it.push({ roles: ['qc'], ic: 'check', title: `Hasil diecut SJ ${j.sj_no} menunggu QC ulang`,
+    sub: `${poLabel(j)} · sisa ${num(j.qc2_balance)} pcs`, page: 'qc', seg: 'wait2', open: rl => qc2Form(null, j, rl) }));
+  rc.filter(r => r.unit === 'SHEET' && Number(r.dc_waiting) > 0).forEach(r => it.push({ roles: ['diecut'], ic: 'cut', title: `SJ ${r.sj_no} siap diecut`,
+    sub: `${poLabel(r)} · ${num(shn(r.dc_waiting, r))} sheet lolos QC`, page: 'diecut', seg: 'wait', open: rl => diecutForm(null, r, rl) }));
+  rc.filter(r => Number(r.ng_qty) > 0 && r.receipt_date >= since).forEach(r => it.push({ roles: ['gudang'], ic: 'box', title: `NG pada SJ ${r.sj_no}: ${num(r.ng_qty)} pcs`,
+    sub: `${poLabel(r)} · hasil QC, tindak lanjuti ke supplier bila perlu`, page: 'gudang', seg: 'sj' }));
+  po.filter(p => Number(p.supplied_total) > 0 && Number(p.fg_balance) > 0).forEach(p => it.push({ roles: ['produksi'], ic: 'pkg', title: `Material di produksi: ${poLabel(p)}`,
+    sub: `Sisa material ${num(p.fg_balance)} pcs belum jadi barang · catat hasil jadi`, page: 'fg', seg: 'fg', open: rl => fgForm(null, rl) }));
+  const role = state.profile?.role;
+  return it.filter(x => role === 'admin' || x.roles.includes(role));
+}
+async function goInbox(i) {
+  const x = state.inbox[i]; if (!x) return;
+  closeInbox();
+  state.seg[x.page] = x.seg;
+  history.pushState(null, '', '#' + x.page);
+  await route();
+  if (x.open && can(x.page === 'fg' ? 'fg' : x.page)) { try { await x.open(() => route()); } catch (e) { toast(errMsg(e), 'err'); } }
+}
+function closeInbox() { $('#inbox')?.remove(); }
+function openInbox() {
+  if ($('#inbox')) return closeInbox();
+  const list = state.inbox;
+  const h = document.createElement('div'); h.id = 'inbox';
+  h.innerHTML = `<div class="backdrop" data-x></div><div class="ibox" role="dialog" aria-label="Inbox">
+    <div class="ibox-h"><b>Inbox</b><span class="mut">${list.length ? list.length + ' perlu tindakan' : ''}</span><button class="x" data-x aria-label="Tutup">&times;</button></div>
+    <div class="ibox-b">${list.length ? list.map((x, i) => `<button class="imsg" data-i="${i}"><i>${icon(x.ic, 18)}</i><span><b>${esc(x.title)}</b><small>${esc(x.sub)}</small></span><em>›</em></button>`).join('')
+      : '<div class="empty"><b>Inbox kosong</b>Tidak ada pekerjaan yang menunggu Anda saat ini.</div>'}</div></div>`;
+  document.body.appendChild(h);
+  h.onclick = e => { if (e.target.closest('[data-x]')) return closeInbox(); const b = e.target.closest('[data-i]'); if (b) goInbox(Number(b.dataset.i)); };
+}
+
 let badgeBusy = false;
 async function refreshBadges() {
   if (badgeBusy || !state.profile) return; badgeBusy = true;
@@ -260,6 +306,9 @@ async function refreshBadges() {
       supply: rq.filter(x => Number(x.outstanding) > 0).length,
       fg: po.filter(p => Number(p.supplied_total) > 0 && Number(p.fg_balance) > 0).length
     };
+    state.inbox = buildInbox(rc, dj, po, rq);
+    const bell = $('#bell');
+    if (bell) { bell.querySelector('.bdg')?.remove(); if (state.inbox.length) bell.insertAdjacentHTML('beforeend', `<em class="bdg">${state.inbox.length > 99 ? '99+' : state.inbox.length}</em>`); }
     document.querySelectorAll('[data-nav]').forEach(a => {
       a.querySelector('.bdg')?.remove();
       const c = n[a.dataset.nav];
@@ -1525,11 +1574,13 @@ function renderShell() {
     <div class="main">
       <header class="top">${logoHTML()}<div class="me"><div class="who"><b>${esc(name)}</b><span>${esc(ROLES[state.profile.role])}</span></div>
         <div class="avatar">${esc(name.slice(0, 1).toUpperCase())}</div>
+        <button class="ibtn" id="bell" title="Inbox" aria-label="Inbox">${icon('bell', 18)}</button>
         <button class="ibtn" id="logout" title="Keluar" aria-label="Keluar">${icon('logout', 18)}</button></div></header>
       <main class="content" id="view"></main>
     </div>
     <nav class="bottom">${nav.map(n => `<a href="#${n.id}" data-nav="${n.id}">${icon(n.icon, 22)}<span>${n.label}</span></a>`).join('')}</nav></div>`;
   $('#logout').onclick = async () => { await sb.auth.signOut(); };
+  $('#bell').onclick = async () => { await refreshBadges(); openInbox(); };
 }
 
 async function route() {
@@ -1582,6 +1633,8 @@ async function start(user) {
   state.user = user; state.profile = data;
   renderShell();
   route();
+  clearInterval(state.inboxTimer);
+  state.inboxTimer = setInterval(() => { if (document.visibilityState === 'visible') refreshBadges(); }, 60000);
 }
 
 function setupNeeded() {
