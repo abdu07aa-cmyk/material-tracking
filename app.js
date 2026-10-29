@@ -253,11 +253,11 @@ let badgeBusy = false;
 async function refreshBadges() {
   if (badgeBusy || !state.profile) return; badgeBusy = true;
   try {
-    const [rc, dj, po] = await Promise.all([q('v_receipts', [['receipt_date', true]]), q('v_diecut_jobs', [['job_date', true]]), q('v_po_summary', [['pi_no', true]])]);
+    const [rc, dj, po, rq] = await Promise.all([q('v_receipts', [['receipt_date', true]]), q('v_diecut_jobs', [['job_date', true]]), q('v_po_summary', [['pi_no', true]]), q('v_requests', [['request_date', true]]).catch(() => [])]);
     const n = {
       qc: rc.filter(r => Number(r.qc_balance) > 0).length + dj.filter(j => Number(j.qc2_balance) > 0).length,
       diecut: rc.filter(r => r.unit === 'SHEET' && Number(r.dc_waiting) > 0).length,
-      supply: po.filter(p => Number(p.stock_ready) > 0).length,
+      supply: rq.filter(x => Number(x.outstanding) > 0).length,
       fg: po.filter(p => Number(p.supplied_total) > 0 && Number(p.fg_balance) > 0).length
     };
     document.querySelectorAll('[data-nav]').forEach(a => {
@@ -557,7 +557,94 @@ async function qcForm(row, pre, rl) {
   });
 }
 
+/* ---------- Request material (Produksi -> Supply) ---------- */
+const reqStatus = r => r.closed ? '<span class="pill gray">Ditutup</span>'
+  : Number(r.outstanding) <= 0 ? '<span class="pill ok">Terpenuhi</span>'
+  : Number(r.qty_sent) > 0 ? `<span class="pill warn">Sebagian · sisa ${num(r.outstanding)}</span>` : '<span class="pill warn">Menunggu Supply</span>';
+
+async function requestForm(row, pre, rl) {
+  const [pos, quota] = await Promise.all([q('v_po_summary', [['pi_no', true]]), q('v_po_req', [['po_item_id', true]])]);
+  const qm = Object.fromEntries(quota.map(x => [x.po_item_id, x]));
+  const list = groupSort(pos).filter(p => row ? p.id === row.po_item_id : Number(qm[p.id]?.req_available) > 0 || (pre && p.id === pre.po_item_id));
+  if (!list.length) return toast('Semua item PI sudah direquest penuh sesuai Qty PI.', 'err');
+  const by = Object.fromEntries(list.map(p => [p.id, p]));
+  const own = row ? (row.closed ? Number(row.qty_sent) : Math.max(Number(row.qty_requested), Number(row.qty_sent))) : 0;
+  openForm({
+    title: row ? 'Ubah Request Material' : 'Request Material ke Supply',
+    sub: 'Boleh diminta bertahap (partial), tetapi total request tidak boleh melebihi Qty PI.',
+    fields: [
+      { name: 'po_item_id', label: 'PI / Material', type: 'select', req: true, disabled: !!row,
+        options: list.map(p => ({ v: p.id, l: `${poLabel(p)} (boleh diminta ${num(Number(qm[p.id]?.req_available || 0))} pcs)` })) },
+      { name: 'request_date', label: 'Tanggal Request', type: 'date', req: true, default: today() },
+      ...UNIT_FIELDS,
+      { name: 'qty_requested', label: 'Qty Request', type: 'number', req: true, min: 0.01, u: true },
+      ...(row ? [{ name: 'closed', label: 'Status Request', type: 'select', req: true,
+        options: [{ v: 'N', l: 'Masih berjalan' }, { v: 'Y', l: 'Tutup – sisa yang belum terkirim tidak dikejar lagi' }] }] : []),
+      { name: 'notes', label: 'Catatan', type: 'textarea' }
+    ],
+    values: row ? { ...row, unit: 'PCS', pps: null, closed: row.closed ? 'Y' : 'N' } : { po_item_id: pre?.po_item_id },
+    keepUnit: !!row,
+    unitFrom: v => by[v.po_item_id]?.unit,
+    ppsFrom: v => by[v.po_item_id]?.pcs_per_sheet,
+    onInput: (v, hint) => {
+      const p = by[v.po_item_id];
+      if (!p) return hint();
+      const avail = Number(qm[p.id]?.req_available || 0) + own;
+      const over = v.qty_requested != null && v.qty_requested > avail;
+      hint(`Qty PI <b>${num(p.qty_po)}</b> · Sudah diminta <b>${num(Number(p.qty_po) - avail)}</b> · Masih boleh diminta <b>${num(avail)}</b> (pcs)` +
+        (over ? `<br>⚠ Melebihi Qty PI sebanyak ${num(v.qty_requested - avail)} pcs.` : ''), over ? 'warn' : 'info');
+    },
+    onSubmit: async v => {
+      const p = by[v.po_item_id];
+      const avail = Number(qm[p.id]?.req_available || 0) + own;
+      if (!(v.closed === 'Y') && v.qty_requested > avail) throw new Error(`Request melebihi Qty PI. Masih boleh diminta ${num(avail)} pcs.`);
+      await save('material_requests', { po_item_id: v.po_item_id, request_date: v.request_date, qty_requested: v.qty_requested, closed: v.closed === 'Y', notes: v.notes }, row?.id);
+      toast('Request tersimpan'); rl();
+    }
+  });
+}
+
+async function issueFromRequest(pre, rl) {
+  const [reqs, pos] = await Promise.all([q('v_requests', [['request_date', true], ['created_at', true]]), q('v_po_summary')]);
+  const pm = Object.fromEntries(pos.map(p => [p.id, p]));
+  const list = reqs.filter(x => Number(x.outstanding) > 0 || (pre && x.id === pre.id));
+  if (!list.length) return toast('Belum ada request dari Produksi yang menunggu dikirim.', 'err');
+  const by = Object.fromEntries(list.map(x => [x.id, x]));
+  openForm({
+    title: 'Kirim Material ke Produksi',
+    sub: 'Pilih request dari Produksi. Boleh dikirim sebagian; sisanya tetap menunggu. Hanya material GOOD yang bisa dikirim.',
+    fields: [
+      { name: 'request_id', label: 'Request Produksi', type: 'select', req: true,
+        options: list.map(x => ({ v: x.id, l: `${poLabel(x)} · minta ${dt(x.request_date)} (sisa ${num(x.outstanding)} pcs)` })) },
+      ...UNIT_FIELDS,
+      { name: 'qty_sent', label: 'Qty Dikirim', type: 'number', req: true, min: 0.01, u: true },
+      { name: 'notes', label: 'Catatan', type: 'textarea' }
+    ],
+    values: { request_id: pre?.id },
+    unitFrom: v => by[v.request_id]?.unit,
+    ppsFrom: v => by[v.request_id]?.pcs_per_sheet,
+    onInput: (v, hint) => {
+      const x = by[v.request_id];
+      if (!x) return hint();
+      const stok = Number(pm[x.po_item_id]?.stock_ready || 0), sisa = Number(x.outstanding);
+      const s = v.qty_sent || 0;
+      const overReq = s > sisa, overStok = s > stok;
+      hint(`Request <b>${num(x.qty_requested)}</b> · Sudah dikirim <b>${num(x.qty_sent)}</b> · Sisa request <b>${num(sisa)}</b> · Stok GOOD <b>${num(stok)}</b> (pcs)` +
+        (overReq ? '<br>⚠ Melebihi sisa request.' : '') + (overStok ? `<br>⚠ Melebihi stok GOOD sebanyak ${num(s - stok)} pcs.` : '') +
+        (s > 0 && !overReq ? `<br>Setelah dikirim, sisa request <b>${num(sisa - s)}</b> pcs.` : ''), overReq || overStok ? 'warn' : 'info');
+    },
+    onSubmit: async v => {
+      const x = by[v.request_id], stok = Number(pm[x.po_item_id]?.stock_ready || 0);
+      if (v.qty_sent > Number(x.outstanding)) throw new Error(`Qty kirim melebihi sisa request (${num(x.outstanding)} pcs).`);
+      if (v.qty_sent > stok) throw new Error(`Qty kirim melebihi stok GOOD (${num(stok)} pcs).`);
+      await save('supply_issues', { po_item_id: x.po_item_id, request_id: x.id, request_date: x.request_date, qty_sent: v.qty_sent, notes: v.notes });
+      toast('Pengiriman tersimpan'); rl();
+    }
+  });
+}
+
 async function issueForm(row, rl) {
+  if (!row) return issueFromRequest(null, rl);
   const pos = groupSort(await q('v_po_summary'));
   const list = row ? pos.filter(p => p.id === row.po_item_id) : pos.filter(p => Number(p.stock_ready) > 0);
   if (!list.length) return toast('Belum ada material GOOD yang siap dikirim. Selesaikan QC (barang sheet: Diecut dan QC ulang) terlebih dahulu.', 'err');
@@ -602,6 +689,7 @@ async function returnForm(row, pre, rl) {
   const by = Object.fromEntries(list.map(i => [i.id, i]));
   const po = Object.fromEntries((await q('v_po_summary')).map(p => [p.id, p]));
   const own = row ? Number(row.qty_return) : 0;
+  const bySupply = can('supply');
   openForm({
     title: row ? 'Ubah Retur' : 'Retur Material dari Produksi',
     fields: [
@@ -612,8 +700,8 @@ async function returnForm(row, pre, rl) {
       { name: 'qty_return', label: 'Qty Retur', type: 'number', req: true, min: 0.01, half: true, u: true },
       { name: 'kondisi', label: 'Kondisi Barang Retur', type: 'select', req: true,
         options: [{ v: 'GOOD', l: 'Masih bagus – kembali ke stok siap kirim' }, { v: 'NG', l: 'Rusak / NG – tidak kembali ke stok' }] },
-      ...(row ? [] : [{ name: 'ganti', label: 'Kirim Pengganti Sekarang?', type: 'select', req: true,
-        options: [{ v: 'N', l: 'Tidak' }, { v: 'Y', l: 'Ya – kirim barang pengganti sebanyak qty retur' }] }]),
+      ...(row ? [] : [{ name: 'ganti', label: bySupply ? 'Kirim Pengganti Sekarang?' : 'Minta Barang Pengganti?', type: 'select', req: true,
+        options: [{ v: 'N', l: 'Tidak' }, { v: 'Y', l: bySupply ? 'Ya – kirim barang pengganti sebanyak qty retur' : 'Ya – buat request pengganti ke Supply sebanyak qty retur' }] }]),
       { name: 'notes', label: 'Catatan / Alasan', type: 'textarea' }
     ],
     values: row ? { ...row, unit: 'PCS', pps: null } : { issue_id: pre?.id, kondisi: 'NG', ganti: 'N' },
@@ -627,15 +715,25 @@ async function returnForm(row, pre, rl) {
       const over = v.qty_return != null && v.qty_return > sisa;
       const stokAwal = Number(po[i.po_item_id]?.stock_ready || 0), q = v.qty_return || 0;
       const stokBaru = stokAwal + (v.kondisi === 'GOOD' ? q : 0);
-      const gantiOver = v.ganti === 'Y' && q > stokBaru;
+      const gantiOver = bySupply && v.ganti === 'Y' && q > stokBaru;
       hint(`Dikirim <b>${num(i.qty_sent)}</b> · Sisa di produksi <b>${num(sisa)}</b> (pcs)` + (over ? '<br>⚠ Qty retur melebihi sisa di produksi.' : '') +
-        (v.ganti === 'Y' ? `<br>Stok siap kirim setelah retur: <b>${num(stokBaru)}</b> pcs · pengganti <b>${num(q)}</b> pcs` + (gantiOver ? '<br>⚠ Stok Good tidak cukup untuk pengganti.' : '') : ''), over || gantiOver ? 'warn' : 'info');
+        (v.ganti === 'Y' && !bySupply ? `<br>Request pengganti <b>${num(q)}</b> pcs akan dibuat otomatis untuk Supply.` : '') +
+        (v.ganti === 'Y' && bySupply ? `<br>Stok siap kirim setelah retur: <b>${num(stokBaru)}</b> pcs · pengganti <b>${num(q)}</b> pcs` + (gantiOver ? '<br>⚠ Stok Good tidak cukup untuk pengganti.' : '') : ''), over || gantiOver ? 'warn' : 'info');
     },
     onSubmit: async v => {
       const i = by[v.issue_id];
       if (v.qty_return > Number(i.balance) + own) throw new Error('Qty retur melebihi sisa material di produksi.');
       if (v.return_date < i.request_date) throw new Error('Tanggal retur tidak boleh sebelum tanggal request.');
       const saved = await save('supply_returns', { issue_id: v.issue_id, return_date: v.return_date, qty_return: v.qty_return, kondisi: v.kondisi, notes: v.notes }, row?.id);
+      if (!row && v.ganti === 'Y' && !bySupply) {
+        try {
+          await save('material_requests', { po_item_id: i.po_item_id, request_date: v.return_date, qty_requested: v.qty_return, notes: 'Pengganti barang retur' + (v.notes ? ': ' + v.notes : '') });
+        } catch (e) {
+          await sb.from('supply_returns').delete().eq('id', saved.id);
+          throw new Error('Retur dibatalkan karena request pengganti gagal: ' + errMsg(e));
+        }
+        toast('Retur tersimpan dan request pengganti sudah dikirim ke Supply'); return rl();
+      }
       if (!row && v.ganti === 'Y') {
         try {
           await save('supply_issues', { po_item_id: i.po_item_id, request_date: v.return_date, qty_sent: v.qty_return, notes: 'Pengganti retur' + (v.notes ? ': ' + v.notes : '') });
@@ -921,6 +1019,16 @@ const DEFS = {
     sub: 'Catat material GOOD yang diminta produksi, serta retur bila ada sisa. Barang sheet baru bisa dikirim setelah Diecut dan QC ulang.',
     segments: [
       {
+        id: 'reqin', label: 'Request Masuk',
+        load: async () => (await q('v_requests', [['request_date', true], ['created_at', true]])).filter(x => Number(x.outstanding) > 0),
+        cols: [
+          { label: 'Tgl Request', k: 'request_date', t: 'd' }, { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' },
+          { label: 'Qty Request', k: 'qty_requested', t: 'n', cls: 'num' }, { label: 'Sudah Dikirim', k: 'qty_sent', t: 'n', cls: 'num' },
+          { label: 'Sisa Dikirim', k: 'outstanding', t: 'b', cls: 'num' }, { label: 'Status', f: reqStatus }, { label: 'Catatan', k: 'notes' }
+        ],
+        acts: r => can('supply') ? [{ key: 'send', label: 'Kirim', icon: 'truck', text: true, cls: 'primary', run: rl => issueFromRequest(r, rl) }] : []
+      },
+      {
         id: 'issue', label: 'Pengiriman',
         load: () => q('v_supply_issues', [['request_date', false], ['created_at', false]]),
         cols: [
@@ -960,9 +1068,30 @@ const DEFS = {
   }),
 
   fg: () => ({
-    id: 'fg', title: 'Finish Good · Produksi',
-    sub: 'Catat hasil jadi dari produksi: karton, display, booklet / cones.',
+    id: 'fg', title: 'Produksi · Request, Retur, Finish Good',
+    sub: 'Request material ke Supply (boleh bertahap, maksimal Qty PI), retur barang NG, dan catat hasil jadi.',
     segments: [
+      {
+        id: 'req', label: 'Request Material',
+        load: () => q('v_requests', [['request_date', false], ['created_at', false]]),
+        cols: [
+          { label: 'Tgl Request', k: 'request_date', t: 'd' }, { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' },
+          { label: 'Qty Request', k: 'qty_requested', t: 'n', cls: 'num' }, { label: 'Sudah Dikirim', k: 'qty_sent', t: 'n', cls: 'num' },
+          { label: 'Sisa', k: 'outstanding', t: 'b', cls: 'num' }, { label: 'Status', f: reqStatus }, { label: 'Catatan', k: 'notes' }
+        ],
+        add: { label: 'Request Material', stage: 'fg', run: rl => requestForm(null, null, rl) },
+        acts: stdActs('material_requests', 'fg', (r, rl) => requestForm(r, null, rl))
+      },
+      {
+        id: 'ret', label: 'Retur ke Supply',
+        load: () => q('v_supply_returns', [['return_date', false], ['created_at', false]]),
+        cols: [
+          { label: 'Tgl Retur', k: 'return_date', t: 'd' }, { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' },
+          { label: 'Qty Retur', k: 'qty_return', t: 'n', cls: 'num' }, { label: 'Kondisi', k: 'kondisi' }, { label: 'Catatan', k: 'notes' }
+        ],
+        add: { label: 'Retur Barang NG', stage: 'fg', run: rl => returnForm(null, null, rl) },
+        acts: stdActs('supply_returns', 'fg', (r, rl) => returnForm(r, null, rl))
+      },
       {
         id: 'fg', label: 'Penerimaan FG',
         load: () => q('v_fg_receipts', [['received_date', false], ['created_at', false]]),
@@ -1379,7 +1508,7 @@ const NAV = [
   { id: 'qc', label: 'QC', icon: 'check' },
   { id: 'diecut', label: 'Diecut', icon: 'cut' },
   { id: 'supply', label: 'Supply', icon: 'truck' },
-  { id: 'fg', label: 'Finish Good', icon: 'pkg' },
+  { id: 'fg', label: 'Produksi', icon: 'pkg' },
   { id: 'users', label: 'Admin', icon: 'users', admin: true }
 ];
 
