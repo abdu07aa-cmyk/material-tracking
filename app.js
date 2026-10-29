@@ -228,13 +228,13 @@ function openForm(o) {
 }
 
 /* ---------- Data helpers ---------- */
-async function q(table, orders = [['created_at', false]]) {
+async function q(table, orders = [['created_at', false]], tie = 'id') {
   // Ambil per 1000 baris sampai habis (batas default Supabase 1000 baris/permintaan)
   const out = [];
   for (let from = 0; ; from += 1000) {
     let r = sb.from(table).select('*');
     orders.forEach(([c, asc]) => (r = r.order(c, { ascending: asc })));
-    r = r.order('id', { ascending: true });
+    r = r.order(tie, { ascending: true });
     const { data, error } = await r.range(from, from + 999);
     if (error) throw error;
     out.push(...(data || []));
@@ -625,7 +625,7 @@ const reqStatus = r => r.closed ? '<span class="pill gray">Ditutup</span>'
   : Number(r.qty_sent) > 0 ? `<span class="pill warn">Sebagian · sisa ${num(r.outstanding)}</span>` : '<span class="pill warn">Menunggu Supply</span>';
 
 async function requestForm(row, pre, rl) {
-  const [pos, quota] = await Promise.all([q('v_po_summary', [['pi_no', true]]), q('v_po_req', [['po_item_id', true]])]);
+  const [pos, quota] = await Promise.all([q('v_po_summary', [['pi_no', true]]), q('v_po_req', [['po_item_id', true]], 'po_item_id')]);
   const qm = Object.fromEntries(quota.map(x => [x.po_item_id, x]));
   const list = groupSort(pos).filter(p => row ? p.id === row.po_item_id : Number(qm[p.id]?.req_available) > 0 || (pre && p.id === pre.po_item_id));
   if (!list.length) return toast('Semua item PI sudah direquest penuh sesuai Qty PI.', 'err');
