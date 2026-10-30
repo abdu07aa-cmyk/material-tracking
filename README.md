@@ -29,12 +29,13 @@ Barang yang datang dalam bentuk **sheet** melewati tahap tambahan. Barang berben
 - Dashboard menampilkan kotak Diecut per PI dan KPI "Menunggu Diecut" / "Menunggu QC Ulang". Laporan Tabel dan Excel punya grup kolom **DIECUT** dan **QC ULANG**.
 
 ## Filter Book
-- Filter Book datang dalam sheet berisi kiri + kanan. Contoh: 45 kanan + 45 kiri = **90 pcs per sheet**. Di form PI isi Jenis Barang `Filter Book`, satuan **SHEET**, isi per sheet **90**.
-- **1 kiri + 1 kanan yang dilem = 1 leaf.** Jadi 90 pcs = **45 leaves**; 10 sheet = 900 pcs = 450 leaves.
-- Kolom **Isi per Filter Book (leaves)**: 32, 33, 40, 50, 60, atau angka lain. 1 filter book jadi memakai leaves × 2 pcs (mis. 32 leaves = 64 pcs).
-- QC ulang mencatat **total pcs saja** (kiri dan kanan tidak dipisah); form menampilkan konversi ke leaves.
-- Di **Finish Good**, isi jumlah filter book jadi. Balance otomatis memotong jumlah jadi × pcs per filter book, dan form menampilkan sisa leaves serta perkiraan buku yang masih bisa dibuat.
-- **Update:** jalankan ulang seluruh `schema.sql`, lalu ubah item Filter Book yang sudah ada dan isi ulang leaves-nya (artinya berubah menjadi pasangan kiri+kanan). SJ sheet lama kini perlu Diecut + QC Ulang sebelum stoknya bisa dikirim.
+- Filter Book datang dalam sheet berisi kiri + kanan. Contoh: 45 kanan + 45 kiri = **90 pcs per sheet**. Di form PI isi Jenis Barang `Filter Book`, satuan **SHEET**, isi per sheet **90**, dan **Isi per Filter Book (leaves)**: 32, 33, 40, 50, 60, dll.
+- **1 filter book jadi = N leaves kiri + N leaves kanan** (mis. 32 kiri + 32 kanan = 64 pcs potongan). 1 sheet 90 pcs = 45 leaves.
+- Alur: Gudang → QC incoming (hitung **sheet**) → **Diecut** (sheet jadi **filter book jadi**) → QC ulang (opsional) → Supply → Produksi.
+- **Setelah Diecut, satuan = filter book jadi (1 buku = 1 pcs).** Hasil Diecut, QC ulang, stok, request Produksi, pengiriman Supply, retur, dan Finish Good semuanya dihitung dalam jumlah filter book. Form Diecut menampilkan hitungan teori otomatis, mis. 5.000 sheet = 450.000 pcs = 225.000 leaves → **7.031 filter book @32 leaves**. Hasil nyata boleh diisi manual.
+- **Perlu QC ulang setelah Diecut?** dipilih per item di form PI. Pilih *Tidak* untuk Filter Book biasa: hasil diecut langsung dianggap GOOD (tercatat otomatis). Pilih *Ya* untuk model printed paper.
+- Batas request Produksi untuk Filter Book dihitung dalam filter book: (Qty PI + sample) buku.
+- **Update:** jalankan ulang seluruh `schema.sql`, lalu ganti `app.js`. Catatan: angka hasil Diecut/QC ulang Filter Book yang sudah diinput dianggap dalam satuan filter book jadi.
 
 ## Master Barang, Badge, dan Riwayat Perubahan
 - **Master Barang & Brand** (menu Admin → tab Master): daftar Jenis Barang dan Brand yang muncul sebagai pilihan di form PI. Penulisan di PI otomatis diseragamkan mengikuti daftar (huruf besar/kecil dan spasi ganda), jadi "booklet" dan "Booklet" tidak terhitung terpisah di Rekap Barang. Bila Leader Gudang mengetik nama yang belum ada, aplikasi menanyakan dulu agar salah ketik tidak menjadi data baru. Admin bisa menambah dan menghapus pilihan; menghapus dari daftar tidak mengubah PI yang sudah ada.
