@@ -274,8 +274,20 @@ function buildInbox(rc, dj, po, rq) {
   const role = state.profile?.role;
   return it.filter(x => role === 'admin' || x.roles.includes(role));
 }
+const PAGE_ROLE = { gudang: 'gudang', qc: 'qc', diecut: 'diecut', supply: 'supply', fg: 'produksi' };
+// Admin: inbox hanya menampilkan pesan divisi yang sedang dibuka (di Dashboard/Admin tampil semua)
+function inboxShown() {
+  const pr = PAGE_ROLE[location.hash.slice(1)];
+  return state.profile?.role === 'admin' && pr && !state.inboxAll ? state.inbox.filter(x => x.roles.includes(pr)) : state.inbox;
+}
+function updateBell() {
+  const bell = $('#bell'); if (!bell) return;
+  bell.querySelector('.bdg')?.remove();
+  const n = inboxShown().length;
+  if (n) bell.insertAdjacentHTML('beforeend', `<em class="bdg">${n > 99 ? '99+' : n}</em>`);
+}
 async function goInbox(i) {
-  const x = state.inbox[i]; if (!x) return;
+  const x = state.inboxList?.[i]; if (!x) return;
   closeInbox();
   state.seg[x.page] = x.seg;
   history.pushState(null, '', '#' + x.page);
@@ -285,14 +297,16 @@ async function goInbox(i) {
 function closeInbox() { $('#inbox')?.remove(); }
 function openInbox() {
   if ($('#inbox')) return closeInbox();
-  const list = state.inbox;
+  const list = state.inboxList = inboxShown();
+  const filtered = state.profile?.role === 'admin' && PAGE_ROLE[location.hash.slice(1)] && !state.inboxAll;
   const h = document.createElement('div'); h.id = 'inbox';
   h.innerHTML = `<div class="backdrop" data-x></div><div class="ibox" role="dialog" aria-label="Inbox">
-    <div class="ibox-h"><b>Inbox</b><span class="mut">${list.length ? list.length + ' perlu tindakan' : ''}</span><button class="x" data-x aria-label="Tutup">&times;</button></div>
+    <div class="ibox-h"><b>Inbox</b><span class="mut">${list.length ? list.length + ' perlu tindakan' : ''}</span>${state.profile?.role === 'admin' && PAGE_ROLE[location.hash.slice(1)] ? `<button class="btn ghost" data-all style="margin-left:auto;padding:4px 10px;font-size:12px">${filtered ? 'Tampilkan semua divisi' : 'Hanya divisi ini'}</button>` : ''}<button class="x" data-x aria-label="Tutup" ${state.profile?.role === 'admin' && PAGE_ROLE[location.hash.slice(1)] ? 'style="margin-left:0"' : ''}>&times;</button></div>
     <div class="ibox-b">${list.length ? list.map((x, i) => `<button class="imsg" data-i="${i}"><i>${icon(x.ic, 18)}</i><span><b>${esc(x.title)}</b><small>${esc(x.sub)}</small></span><em>›</em></button>`).join('')
       : '<div class="empty"><b>Inbox kosong</b>Tidak ada pekerjaan yang menunggu Anda saat ini.</div>'}</div></div>`;
   document.body.appendChild(h);
-  h.onclick = e => { if (e.target.closest('[data-x]')) return closeInbox(); const b = e.target.closest('[data-i]'); if (b) goInbox(Number(b.dataset.i)); };
+  h.onclick = e => { if (e.target.closest('[data-all]')) { state.inboxAll = !state.inboxAll; closeInbox(); updateBell(); return openInbox(); }
+    if (e.target.closest('[data-x]')) return closeInbox(); const b = e.target.closest('[data-i]'); if (b) goInbox(Number(b.dataset.i)); };
 }
 
 let badgeBusy = false;
@@ -301,8 +315,7 @@ async function refreshBadges() {
   try {
     const [rc, dj, po, rq] = await Promise.all([q('v_receipts', [['receipt_date', true]]), q('v_diecut_jobs', [['job_date', true]]), q('v_po_summary', [['pi_no', true]]), q('v_requests', [['request_date', true]]).catch(() => [])]);
     state.inbox = buildInbox(rc, dj, po, rq);
-    const bell = $('#bell');
-    if (bell) { bell.querySelector('.bdg')?.remove(); if (state.inbox.length) bell.insertAdjacentHTML('beforeend', `<em class="bdg">${state.inbox.length > 99 ? '99+' : state.inbox.length}</em>`); }
+    updateBell();
   } catch (e) { /* badge hanya pelengkap */ } finally { badgeBusy = false; }
 }
 async function del(table, id) {
@@ -1731,7 +1744,7 @@ async function route() {
     if (page === 'dashboard') await renderDashboard(view);
     else if (page === 'users') await renderAdmin(view);
     else await renderSegPage(view, DEFS[page]());
-    refreshBadges();
+    state.inboxAll = false; updateBell(); refreshBadges();
     if (state.profile.role === 'viewer') view.insertAdjacentHTML('afterbegin', '<div class="banner">Akun Anda belum diberi role input. Hubungi Admin untuk mengatur role (Gudang / QC / Supply / Produksi). Saat ini hanya bisa melihat data.</div>');
   } catch (e) { view.innerHTML = `<div class="errbox">${esc(errMsg(e))}</div>`; }
 }
