@@ -63,6 +63,27 @@ Setiap leader punya inbox berisi pekerjaan yang menunggu dirinya. Angka merah di
 | Leader Produksi | Request yang baru terkirim sebagian, dan material di produksi yang belum dicatat hasil jadinya |
 Admin melihat semua. Inbox mengikuti data terbaru: pesan hilang sendiri setelah pekerjaannya selesai, dan diperbarui otomatis tiap 1 menit. Tidak perlu menjalankan SQL baru untuk fitur ini.
 
+## Qty PI dan batas request Produksi
+- Saat membuat PI/item, isi **Qty PI** (target barang jadi, mis. 1000 booklet), **Isi per Display** (25; 24 bila memakai Filter Book), dan **Display untuk Sample** (bawaan 2).
+- **Batas request Produksi = (Qty PI + display sample × isi per display) × pcs per barang jadi.** Contoh: Qty PI 1000 booklet, 2 display × 25 = 50 → batas 1.050. Untuk Filter Book, hasilnya dikali pcs per buku (leaves × 2): Qty PI 7.000 @32 leaves dengan 2 display × 24 → (7.000 + 48) × 64 = 451.072 pcs.
+- Request yang melebihi batas ditolak oleh form dan database. Barang NG yang diretur mengembalikan kuota sebesar qty-nya.
+- Bila Produksi memang perlu lebih, **Admin** mengisi **Izin Tambahan Request (pcs)** pada item PI tersebut. Hanya Admin yang bisa mengubahnya (Leader Gudang tidak).
+- Tabel Data PI menampilkan kolom **Qty PI** dan **Batas Request**. Item lama tanpa Qty PI memakai Qty PO sebagai batas sampai Qty PI diisi.
+- **Update:** jalankan ulang `schema.sql`, ganti `app.js`, lalu isi Qty PI pada item yang sudah ada (tombol ubah).
+
+## Satu PI, banyak jenis barang, beda asal (Per PI vs Stok Gudang)
+Setiap baris barang di PI punya **Asal Barang**:
+| Asal | Contoh | Alur |
+|---|---|---|
+| **Datang per PI**, perlu diecut | Booklet, Display, Filter Book berbentuk sheet | Gudang → QC → Diecut → QC ulang → Supply → Produksi |
+| **Datang per PI**, sudah jadi | Cover, Carton, Straw Paper, Grinder, Double Tape, Magnet, Plat yang dibeli untuk PI itu | Gudang → QC (atau tanpa QC) → Supply → Produksi |
+| **Dari Stok Gudang** | Paper, Magnet, Plat, Filter Book stok lama | Tidak ada penerimaan. Produksi request, Supply kirim dari saldo stok |
+- **Perlu QC saat diterima?** (untuk barang per PI): pilih *Tidak* untuk barang pendukung yang dibeli sudah jadi. Penerimaan langsung tercatat GOOD secara otomatis (QC otomatis), tanpa merepotkan Leader QC.
+- **Stok Gudang** (menu Gudang → tab *Stok Gudang* dan *Riwayat Stok*): satu saldo per barang + spesifikasi (mis. *Magnet 10x10*), **dipakai bersama semua PI dan brand**. Isi **Stok Awal** sekali dengan hasil hitung sekarang, lalu catat **Barang Masuk** atau **Koreksi**. Saldo = masuk − dikirim + retur GOOD, dan tidak boleh negatif.
+- Di PI, pilih **Asal Barang = Dari Stok Gudang** dan isi **Qty Kebutuhan** untuk PI itu. Form menampilkan saldo stok dan memberi peringatan bila kebutuhan melebihi stok. Request Produksi dibatasi sebesar kebutuhan itu (ditambah izin Admin bila ada), dan pengiriman dibatasi saldo stok.
+- Dashboard menampilkan kartu khusus "Dari Stok" (kebutuhan, terkirim, saldo stok). Barang dari stok tidak ikut hitungan Finish Good dan tidak muncul di form Penerimaan SJ. Supply bisa melihat saldo di tab *Stok Gudang (Umum)*.
+- **Update:** jalankan ulang seluruh `schema.sql`, lalu ganti `app.js`.
+
 ## Satuan PCS dan SHEET
 Barang dari supplier bisa datang dalam PCS atau masih berbentuk sheet (1 sheet berisi 3, 4, 6, 8 pcs atau lebih, bebas per material/SJ).
 - Semua jumlah dan saldo di database dihitung dalam **PCS**, jadi balance Gudang → QC → Supply → Finish Good selalu sinkron.
