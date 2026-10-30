@@ -494,7 +494,7 @@ async function loadMaster() {
 }
 const isDisplayItem = n => /display/i.test(n || '');
 const sampleOf = p => isDisplayItem(p.item_name) ? Number(p.sample_display || 0) : Number(p.sample_display || 0) * Number(p.isi_per_display || 0);
-const reqLimit = p => (p.qty_pi != null ? (Number(p.qty_pi) + sampleOf(p)) * (Number(p.pcs_per_book) || (p.leaves_per_book ? p.leaves_per_book * 2 : 1)) : Number(p.qty_po)) + Number(p.req_extra || 0);
+const reqLimit = p => (p.qty_pi != null ? (Number(p.qty_pi) + sampleOf(p)) * 1 : Number(p.qty_po)) + Number(p.req_extra || 0);
 const sameName = (a, b) => a.replace(/\s+/g, ' ').trim().toLowerCase() === b.replace(/\s+/g, ' ').trim().toLowerCase();
 
 async function poForm(row, rl, pre) {
@@ -518,6 +518,9 @@ async function poForm(row, rl, pre) {
         help: 'Pilih "Dari Stok Gudang" untuk barang umum yang sudah ada stoknya (mis. magnet, plat, paper).' },
       { name: 'needs_qc', label: 'Perlu QC saat diterima?', type: 'select', noEmpty: true, default: 'Y', showIf: notStock,
         options: [{ v: 'Y', l: 'Ya, lewat QC' }, { v: 'N', l: 'Tidak, langsung dianggap GOOD (barang jadi/pendukung)' }] },
+      { name: 'needs_qc2', label: 'Perlu QC ulang setelah Diecut?', type: 'select', noEmpty: true, default: 'Y', showIf: v => notStock(v) && v.unit === 'SHEET',
+        options: [{ v: 'Y', l: 'Ya, dicek ulang (mis. Filter Book model printed paper)' }, { v: 'N', l: 'Tidak, hasil diecut langsung dianggap GOOD' }],
+        help: 'Filter Book biasanya Tidak, kecuali model printed paper.' },
       { name: 'qty_need', label: 'Qty Kebutuhan untuk PI Ini (pcs)', type: 'number', req: true, min: 0.01, showIf: v => v.source === 'STOCK' },
       { name: 'leaves_per_book', label: 'Isi per Filter Book (leaves)', type: 'number', min: 1, req: true, list: ['32', '33', '40', '50', '60'],
         placeholder: 'mis. 32', showIf: v => isFilterBook(v.item_name), help: '1 leaf = 1 pcs kiri + 1 pcs kanan yang dilem. Isi jumlah leaves per 1 filter book jadi.' },
@@ -529,7 +532,7 @@ async function poForm(row, rl, pre) {
       { name: 'sample_display', label: 'Display untuk Sample', type: 'number', min: 0, half: true, default: 2, showIf: notStock },
       ...(isAdmin() ? [{ name: 'req_extra', label: 'Izin Tambahan Request (pcs, Admin)', type: 'number', min: 0, half: true, default: 0, help: 'Hanya Admin. Tambahan di luar Qty PI + sample, bila Produksi memang perlu lebih.' }] : [])
     ],
-    values: row ? { ...row, pps: row.pcs_per_sheet, qty_po: sheet ? row.qty_po_input : row.qty_po, qty_need: row.qty_po, needs_qc: row.needs_qc === false ? 'N' : 'Y' } : (pre || null),
+    values: row ? { ...row, pps: row.pcs_per_sheet, qty_po: sheet ? row.qty_po_input : row.qty_po, qty_need: row.qty_po, needs_qc: row.needs_qc === false ? 'N' : 'Y', needs_qc2: row.needs_qc2 === false ? 'N' : 'Y' } : (pre || null),
     keepUnit: !!row,
     submit2: row ? null : 'Simpan & Tambah Item Lain di PI Ini',
     onInput: (v, hint) => {
@@ -542,8 +545,8 @@ async function poForm(row, rl, pre) {
       const fb = isFilterBook(v.item_name), L = Number(v.leaves_per_book), k = Number(v.pps);
       let lim = '';
       if (v.qty_pi > 0) {
-        const per = fb && L > 0 ? L * 2 : 1, smp = isDisplayItem(v.item_name) ? (v.sample_display || 0) : (v.sample_display || 0) * (v.isi_per_display || 0);
-        lim = `<b>Batas request Produksi:</b> (${num(v.qty_pi)} + sample ${num(smp)}) = ${num(v.qty_pi + smp)} ${isDisplayItem(v.item_name) ? 'display' : 'barang jadi'}` + (per > 1 ? ` × ${num(per)} pcs = <b>${num(Math.round((v.qty_pi + smp) * per))} pcs</b>` : '') + ((v.req_extra || 0) > 0 ? ` + izin tambahan ${num(v.req_extra)}` : '');
+        const smp = isDisplayItem(v.item_name) ? (v.sample_display || 0) : (v.sample_display || 0) * (v.isi_per_display || 0);
+        lim = `<b>Batas request Produksi:</b> (${num(v.qty_pi)} + sample ${num(smp)}) = <b>${num(v.qty_pi + smp)} ${isDisplayItem(v.item_name) ? 'display' : fb ? 'filter book' : 'barang jadi'}</b>` + ((v.req_extra || 0) > 0 ? ` + izin tambahan ${num(v.req_extra)}` : '');
       } else lim = 'Qty PI belum diisi: batas request Produksi memakai Qty PO.';
       if (!fb) return hint(lim);
       let t = 'Filter Book datang dalam sheet: 1 sheet = kiri + kanan (mis. 45 kiri + 45 kanan = 90 pcs = 45 leaves). Pilih satuan SHEET dan isi per sheet 90. Setelah QC, sheet masuk Diecut.';
@@ -565,11 +568,11 @@ async function poForm(row, rl, pre) {
       const stk = v.source === 'STOCK';
       await save('po_items', stk ? {
         pi_no: v.pi_no, brand: v.brand, item_name: v.item_name, specification: v.specification || '',
-        source: 'STOCK', needs_qc: true, leaves_per_book: null, qty_po: v.qty_need, unit: 'PCS', pcs_per_sheet: null, qty_po_input: null,
+        source: 'STOCK', needs_qc: true, needs_qc2: true, leaves_per_book: null, qty_po: v.qty_need, unit: 'PCS', pcs_per_sheet: null, qty_po_input: null,
         qty_pi: null, isi_per_display: null, sample_display: 2,
         ...(isAdmin() ? { req_extra: v.req_extra || 0 } : {})
       } : {
-        source: 'PI', needs_qc: v.needs_qc !== 'N',
+        source: 'PI', needs_qc: v.needs_qc !== 'N', needs_qc2: v.unit !== 'SHEET' || v.needs_qc2 !== 'N',
         pi_no: v.pi_no, brand: v.brand, item_name: v.item_name, specification: v.specification || '',
         leaves_per_book: isFilterBook(v.item_name) ? v.leaves_per_book : null,
         qty_po: v.qty_po, unit: v.unit, pcs_per_sheet: v.unit === 'SHEET' ? v.pps : null, qty_po_input: v.raw.qty_po,
@@ -690,16 +693,12 @@ async function requestForm(row, pre, rl) {
       { name: 'po_item_id', label: 'PI / Material', type: 'select', req: true, disabled: !!row,
         options: list.map(p => ({ v: p.id, l: `${poLabel(p)} (boleh diminta ${num(Number(qm[p.id]?.req_available || 0))} pcs)` })) },
       { name: 'request_date', label: 'Tanggal Request', type: 'date', req: true, default: today() },
-      ...UNIT_FIELDS,
-      { name: 'qty_requested', label: 'Qty Request', type: 'number', req: true, min: 0.01, u: true },
+      { name: 'qty_requested', label: 'Qty Request (pcs / filter book)', type: 'number', req: true, min: 0.01 },
       ...(row ? [{ name: 'closed', label: 'Status Request', type: 'select', req: true,
         options: [{ v: 'N', l: 'Masih berjalan' }, { v: 'Y', l: 'Tutup – sisa yang belum terkirim tidak dikejar lagi' }] }] : []),
       { name: 'notes', label: 'Catatan', type: 'textarea' }
     ],
     values: row ? { ...row, unit: 'PCS', pps: null, closed: row.closed ? 'Y' : 'N' } : { po_item_id: pre?.po_item_id },
-    keepUnit: !!row,
-    unitFrom: v => by[v.po_item_id]?.unit,
-    ppsFrom: v => by[v.po_item_id]?.pcs_per_sheet,
     onInput: (v, hint) => {
       const p = by[v.po_item_id];
       if (!p) return hint();
@@ -730,13 +729,10 @@ async function issueFromRequest(pre, rl) {
     fields: [
       { name: 'request_id', label: 'Request Produksi', type: 'select', req: true,
         options: list.map(x => ({ v: x.id, l: `${poLabel(x)} · minta ${dt(x.request_date)} (sisa ${num(x.outstanding)} pcs)` })) },
-      ...UNIT_FIELDS,
-      { name: 'qty_sent', label: 'Qty Dikirim', type: 'number', req: true, min: 0.01, u: true },
+      { name: 'qty_sent', label: 'Qty Dikirim (pcs / filter book)', type: 'number', req: true, min: 0.01 },
       { name: 'notes', label: 'Catatan', type: 'textarea' }
     ],
     values: { request_id: pre?.id },
-    unitFrom: v => by[v.request_id]?.unit,
-    ppsFrom: v => by[v.request_id]?.pcs_per_sheet,
     onInput: (v, hint) => {
       const x = by[v.request_id];
       if (!x) return hint();
@@ -769,15 +765,11 @@ async function issueForm(row, rl) {
     fields: [
       { name: 'po_item_id', label: 'PI / Material', type: 'select', req: true, disabled: !!row,
         options: list.map(p => ({ v: p.id, l: `${poLabel(p)} (stok ${num(p.stock_ready)} pcs)` })) },
-      ...UNIT_FIELDS,
       { name: 'request_date', label: 'Tanggal Request Material', type: 'date', req: true, default: today(), half: true },
-      { name: 'qty_sent', label: 'Qty Dikirim', type: 'number', req: true, min: 0.01, half: true, u: true },
+      { name: 'qty_sent', label: 'Qty Dikirim (pcs / filter book)', type: 'number', req: true, min: 0.01, half: true },
       { name: 'notes', label: 'Catatan', type: 'textarea' }
     ],
     values: row ? { ...row, unit: 'PCS', pps: null } : null,
-    keepUnit: !!row,
-    unitFrom: v => by[v.po_item_id]?.unit,
-    ppsFrom: v => by[v.po_item_id]?.pcs_per_sheet,
     onInput: (v, hint) => {
       const p = by[v.po_item_id];
       if (!p) return hint();
@@ -809,9 +801,8 @@ async function returnForm(row, pre, rl) {
     fields: [
       { name: 'issue_id', label: 'Pengiriman', type: 'select', req: true, disabled: !!row,
         options: list.map(i => ({ v: i.id, l: `${poLabel(i)} · kirim ${dt(i.request_date)} (sisa ${num(i.balance)} pcs)` })) },
-      ...UNIT_FIELDS,
       { name: 'return_date', label: 'Tanggal Retur', type: 'date', req: true, default: today(), half: true },
-      { name: 'qty_return', label: 'Qty Retur', type: 'number', req: true, min: 0.01, half: true, u: true },
+      { name: 'qty_return', label: 'Qty Retur (pcs / filter book)', type: 'number', req: true, min: 0.01, half: true },
       { name: 'kondisi', label: 'Kondisi Barang Retur', type: 'select', req: true,
         options: [{ v: 'GOOD', l: 'Masih bagus – kembali ke stok siap kirim' }, { v: 'NG', l: 'Rusak / NG – tidak kembali ke stok' }] },
       ...(row ? [] : [{ name: 'ganti', label: bySupply ? 'Kirim Pengganti Sekarang?' : 'Minta Barang Pengganti?', type: 'select', req: true,
@@ -819,9 +810,6 @@ async function returnForm(row, pre, rl) {
       { name: 'notes', label: 'Catatan / Alasan', type: 'textarea' }
     ],
     values: row ? { ...row, unit: 'PCS', pps: null } : { issue_id: pre?.id, kondisi: 'NG', ganti: 'N' },
-    keepUnit: !!row,
-    unitFrom: v => by[v.issue_id]?.unit,
-    ppsFrom: v => by[v.issue_id]?.pcs_per_sheet,
     onInput: (v, hint) => {
       const i = by[v.issue_id];
       if (!i) return hint();
@@ -882,7 +870,7 @@ async function fgForm(row, rl) {
     onInput: (v, hint) => {
       const p = by[v.po_item_id];
       if (!p) return hint();
-      const per = Number(p.pcs_per_book) || 1, lv = Number(p.leaves_per_book) || 0;
+      const per = 1, lv = 0;
       const doneBooks = Number(p.fg_booklet) - (row ? Number(row.booklet_cones) : 0);
       const sisa = Number(p.at_production) - doneBooks * per;
       const need = (v.booklet_cones || 0) * per;
@@ -891,7 +879,7 @@ async function fgForm(row, rl) {
         ? `Filter Book isi <b>${num(lv)}</b> leaves (= ${num(per)} pcs kiri + kanan) · Material di produksi <b>${num(p.at_production)}</b> pcs · Terpakai <b>${num(doneBooks * per)}</b> pcs (${num(doneBooks)} buku jadi) · Sisa <b>${num(sisa)}</b> pcs = ${num(sisa / 2)} leaves ≈ ${num(Math.floor(sisa / per))} buku` +
           (need > 0 ? `<br>Input ini ${num(v.booklet_cones)} buku = ${num(need)} pcs (${num(need / 2)} leaves)` : '') +
           (over ? '<br>⚠ Melebihi material yang ada di produksi — periksa kembali.' : '')
-        : `Material di produksi <b>${num(p.at_production)}</b> · Booklet/Cones jadi <b>${num(doneBooks)}</b> · Sisa <b>${num(sisa)}</b>` +
+        : `Material di produksi <b>${num(p.at_production)}</b> · ${p.leaves_per_book ? 'Filter Book' : 'Booklet/Cones'} jadi <b>${num(doneBooks)}</b> · Sisa <b>${num(sisa)}</b>` +
           (over ? '<br>⚠ Booklet/Cones melebihi material yang ada di produksi — periksa kembali.' : ''), over ? 'warn' : 'info');
     },
     onSubmit: async v => {
@@ -919,7 +907,7 @@ async function diecutForm(row, pre, rl) {
         options: list.map(r => ({ v: r.id, l: `${poLabel(r)} · SJ ${r.sj_no} (sisa ${num(shn(r.dc_waiting, r))} sheet)` })) },
       { name: 'job_date', label: 'Tanggal Diecut', type: 'date', req: true, default: today() },
       { name: 'sheets_in', label: 'Jumlah Sheet Didiecut', type: 'number', req: true, min: 0.01, half: true },
-      { name: 'qty_out', label: 'Hasil Diecut (pcs)', type: 'number', min: 0.01, half: true, help: 'Kosongkan bila hasil sesuai hitungan teori.' },
+      { name: 'qty_out', label: 'Hasil Diecut (pcs / filter book jadi)', type: 'number', min: 0.01, half: true, help: 'Filter Book: isi jumlah buku jadi (1 buku = leaves kiri + kanan). Kosongkan bila sesuai hitungan teori.' },
       { name: 'notes', label: 'Catatan', type: 'textarea' }
     ],
     values: row || { receipt_id: pre?.id },
@@ -931,7 +919,7 @@ async function diecutForm(row, pre, rl) {
       const teori = v.sheets_in != null ? Math.round(v.sheets_in * k * 100) / 100 : null;
       const over = teori != null && teori > sisa + 1e-6;
       hint(`Good QC siap diecut: <b>${num(shn(sisa, r))}</b> sheet (= ${num(sisa)} pcs, isi ${num(k)} pcs per sheet)` +
-        (teori != null ? `<br>${num(v.sheets_in)} sheet → teori <b>${num(teori)}</b> pcs` + (r.leaves_per_book ? ` = ${num(teori / 2)} leaves ≈ <b>${num(Math.floor(teori / (2 * Number(r.leaves_per_book))))} filter book</b> @${num(r.leaves_per_book)} leaves` : '') : '') +
+        (teori != null ? `<br>${num(v.sheets_in)} sheet → ${num(teori)} pcs` + (r.leaves_per_book ? ` = ${num(teori / 2)} leaves → teori <b>${num(Math.floor(teori / (2 * Number(r.leaves_per_book))))} filter book</b> @${num(r.leaves_per_book)} leaves (kiri ${num(r.leaves_per_book)} + kanan ${num(r.leaves_per_book)})` : ` → teori <b>${num(teori)}</b> pcs`) : '') +
         (over ? '<br>⚠ Melebihi Good QC yang belum didiecut.' : ''), over ? 'warn' : 'info');
     },
     onSubmit: async v => {
@@ -939,7 +927,7 @@ async function diecutForm(row, pre, rl) {
       const qin = Math.round(v.sheets_in * Number(r.pcs_per_sheet) * 100) / 100;
       const sisa = Number(r.dc_waiting) + ownIn;
       if (qin > sisa + 1e-6) throw new Error(`Sheet melebihi Good QC yang belum didiecut (${num(shn(sisa, r))} sheet).`);
-      const out = v.qty_out != null ? v.qty_out : qin;
+      const out = v.qty_out != null ? v.qty_out : (r.leaves_per_book ? Math.floor(qin / (2 * Number(r.leaves_per_book))) : qin);
       await save('diecut_jobs', { receipt_id: v.receipt_id, job_date: v.job_date, sheets_in: v.sheets_in, qty_in: qin, qty_out: out, notes: v.notes }, row?.id);
       toast('Proses diecut tersimpan'); rl();
     }
@@ -971,7 +959,7 @@ async function qc2Form(row, pre, rl) {
       const g = v.good_qty || 0, tot = g + (v.ng_qty || 0);
       const over = tot > sisa;
       hint(`Hasil diecut <b>${num(j.qty_out)}</b> pcs · Sisa belum dicek <b>${num(sisa)}</b> · Input ini <b>${num(tot)}</b> pcs` +
-        (j.leaves_per_book && g > 0 ? `<br>Good ${num(g)} pcs = ${num(g / 2)} leaves (1 leaf = 1 kiri + 1 kanan)` : '') +
+        (j.leaves_per_book && g > 0 ? `<br>Good ${num(g)} filter book jadi (1 buku = ${num(j.leaves_per_book)} leaves kiri + ${num(j.leaves_per_book)} kanan)` : '') +
         (over ? `<br>⚠ Melebihi sisa hasil diecut sebanyak ${num(tot - sisa)} pcs.` : ''), over ? 'warn' : 'info');
     },
     onSubmit: async v => {
@@ -1087,7 +1075,7 @@ const DEFS = {
         load: async () => (await q('v_diecut_jobs', [['job_date', true], ['created_at', true]])).filter(j => Number(j.qc2_balance) > 0),
         cols: [
           { label: 'Tgl Diecut', k: 'job_date', t: 'd' }, { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' },
-          { label: 'No. SJ / DO', k: 'sj_no' }, { label: 'Hasil Diecut (pcs)', k: 'qty_out', t: 'n', cls: 'num' },
+          { label: 'No. SJ / DO', k: 'sj_no' }, { label: 'Hasil Diecut (pcs / buku jadi)', k: 'qty_out', t: 'n', cls: 'num' },
           { label: 'Good', k: 'qc2_good', t: 'n', cls: 'num' }, { label: 'NG', k: 'qc2_ng', t: 'n', cls: 'num' },
           { label: 'Sisa Dicek', k: 'qc2_balance', t: 'b', cls: 'num' }
         ],
@@ -1098,7 +1086,7 @@ const DEFS = {
         load: () => q('v_qc2_inspections', [['inspect_date', false], ['created_at', false]]),
         cols: [
           { label: 'Tgl Cek', k: 'inspect_date', t: 'd' }, { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' },
-          { label: 'No. SJ / DO', k: 'sj_no' }, { label: 'Hasil Diecut (pcs)', k: 'qty_out', t: 'n', cls: 'num' },
+          { label: 'No. SJ / DO', k: 'sj_no' }, { label: 'Hasil Diecut (pcs / buku jadi)', k: 'qty_out', t: 'n', cls: 'num' },
           { label: 'Good', k: 'good_qty', t: 'n', cls: 'num' }, { label: 'NG', k: 'ng_qty', t: 'n', cls: 'num' },
           { label: 'Keterangan', k: 'description' }
         ],
@@ -1141,7 +1129,7 @@ const DEFS = {
         cols: [
           { label: 'Tgl Diecut', k: 'job_date', t: 'd' }, { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' },
           { label: 'No. SJ / DO', k: 'sj_no' }, { label: 'Sheet Didiecut', k: 'sheets_in', t: 'n', cls: 'num' },
-          { label: 'Hasil (pcs)', k: 'qty_out', t: 'n', cls: 'num' }, { label: 'QC Ulang Good', k: 'qc2_good', t: 'n', cls: 'num' },
+          { label: 'Hasil (pcs / buku jadi)', k: 'qty_out', t: 'n', cls: 'num' }, { label: 'QC Ulang Good', k: 'qc2_good', t: 'n', cls: 'num' },
           { label: 'QC Ulang NG', k: 'qc2_ng', t: 'n', cls: 'num' }, { label: 'Sisa QC Ulang', k: 'qc2_balance', t: 'b', cls: 'num' }
         ],
         add: { label: 'Proses Diecut', stage: 'diecut', run: rl => diecutForm(null, null, rl) },
@@ -1382,7 +1370,7 @@ const REPORT = [
     { k: 'good', l: 'GOOD MATERIAL', w: 14, t: 'n' }, { k: 'ng', l: 'NG MATERIAL', w: 14, t: 'n' },
     { k: 'qc_desc', l: 'DESCRIPTION', w: 28, t: 'x', al: 'left' }, { k: 'qc_bal', l: 'BALANCE', w: 12, t: 'b' }] },
   { g: 'DIECUT (SHEET JADI PCS)', c: 'd', cols: [
-    { k: 'dc_sheets', l: 'SHEET DIECUT', w: 13, t: 'n' }, { k: 'dc_out', l: 'HASIL DIECUT (PCS)', w: 15, t: 'n' },
+    { k: 'dc_sheets', l: 'SHEET DIECUT', w: 13, t: 'n' }, { k: 'dc_out', l: 'HASIL DIECUT (PCS / BUKU JADI)', w: 15, t: 'n' },
     { k: 'dc_bal', l: 'BALANCE (SHEET)', w: 14, t: 'b' }] },
   { g: 'QC ULANG SETELAH DIECUT', c: 'q2', cols: [
     { k: 'qc2_good', l: 'GOOD (PCS)', w: 12, t: 'n' }, { k: 'qc2_ng', l: 'NG (PCS)', w: 12, t: 'n' },
