@@ -269,7 +269,7 @@ function buildInbox(rc, dj, po, rq) {
     sub: `${poLabel(r)} · ${num(shn(r.dc_waiting, r))} sheet lolos QC`, page: 'diecut', seg: 'wait', open: rl => diecutForm(null, r, rl) }));
   rc.filter(r => Number(r.ng_qty) > 0 && r.receipt_date >= since).forEach(r => it.push({ roles: ['gudang'], ic: 'box', title: `NG pada SJ ${r.sj_no}: ${num(r.ng_qty)} pcs`,
     sub: `${poLabel(r)} · hasil QC, tindak lanjuti ke supplier bila perlu`, page: 'gudang', seg: 'sj' }));
-  po.filter(p => Number(p.supplied_total) > 0 && Number(p.fg_balance) > 0).forEach(p => it.push({ roles: ['produksi'], ic: 'pkg', title: `Material di produksi: ${poLabel(p)}`,
+  po.filter(p => p.source !== 'STOCK' && Number(p.supplied_total) > 0 && Number(p.fg_balance) > 0).forEach(p => it.push({ roles: ['produksi'], ic: 'pkg', title: `Material di produksi: ${poLabel(p)}`,
     sub: `Sisa material ${num(p.fg_balance)} pcs belum jadi barang · catat hasil jadi`, page: 'fg', seg: 'fg', open: rl => fgForm(null, rl) }));
   const role = state.profile?.role;
   return it.filter(x => role === 'admin' || x.roles.includes(role));
@@ -448,6 +448,31 @@ const UNIT_FIELDS = [
     showIf: v => v.unit === 'SHEET' }
 ];
 
+async function stockForm(row, rl) {
+  const master = await loadMaster();
+  openForm({
+    title: row ? 'Ubah Catatan Stok' : 'Tambah Stok Gudang',
+    sub: 'Stok dipakai bersama oleh semua PI/brand yang memerlukan barang ini. Isi Stok Awal sekali (hasil hitung sekarang), lalu barang masuk berikutnya.',
+    fields: [
+      { name: 'item_name', label: 'Jenis Barang', req: true, list: master.item, placeholder: 'mis. Magnet' },
+      { name: 'specification', label: 'Spesifikasi', placeholder: 'mis. 10x10 / A4 80gr (boleh kosong)' },
+      { name: 'kind', label: 'Jenis Catatan', type: 'select', req: true, noEmpty: true, default: 'OPENING',
+        options: [{ v: 'OPENING', l: 'Stok Awal (hasil hitung sekarang)' }, { v: 'IN', l: 'Barang Masuk ke Stok' }, { v: 'ADJUST', l: 'Koreksi (boleh minus)' }] },
+      { name: 'entry_date', label: 'Tanggal', type: 'date', req: true, default: today(), half: true },
+      { name: 'qty', label: 'Qty (pcs)', type: 'number', req: true, min: -1e9, half: true, help: 'Koreksi boleh diisi negatif, mis. -20.' },
+      { name: 'notes', label: 'Catatan', type: 'textarea' }
+    ],
+    values: row || null,
+    onSubmit: async v => {
+      if (!v.qty) throw new Error('Qty tidak boleh 0.');
+      if (v.kind !== 'ADJUST' && v.qty < 0) throw new Error('Qty harus positif. Gunakan "Koreksi" untuk mengurangi stok.');
+      if (!master.item.some(n => sameName(n, v.item_name)) && !(await ask(`Jenis barang "${v.item_name}" belum ada di daftar master. Simpan sebagai barang baru?\n\nYang sudah ada: ${master.item.slice(0, 12).join(', ')}`, 'Ya, Simpan'))) throw new Error('Dibatalkan.');
+      await save('stock_ledger', { item_name: v.item_name, specification: v.specification || '', kind: v.kind, entry_date: v.entry_date, qty: v.qty, notes: v.notes }, row?.id);
+      toast('Stok tersimpan'); rl();
+    }
+  });
+}
+
 async function loadMaster() {
   let m = [];
   try { m = await q('master_data', [['name', true]]); } catch (e) { /* tabel master belum ada: pakai daftar bawaan */ }
@@ -462,6 +487,10 @@ const sameName = (a, b) => a.replace(/\s+/g, ' ').trim().toLowerCase() === b.rep
 async function poForm(row, rl, pre) {
   const sheet = !!row && row.unit === 'SHEET';
   const master = await loadMaster();
+  let stocks = [];
+  try { stocks = await q('v_stock', [['item_name', true]]); } catch (e) { /* belum ada */ }
+  const stockOf = v => stocks.find(s => sameName(s.item_name, v.item_name || '') && sameName(s.specification || '', v.specification || ''));
+  const notStock = v => v.source !== 'STOCK';
   const names = [...new Set([...master.item, ...(poForm.names || [])])];
   openForm({
     title: row ? 'Ubah Item PI' : (pre ? `Tambah Item · PI ${pre.pi_no}` : 'PI / PO Baru'),
@@ -471,20 +500,32 @@ async function poForm(row, rl, pre) {
       { name: 'brand', label: 'Brand', req: true, list: master.brand, placeholder: 'pilih atau ketik, mis. SB BROWN + TIPS' },
       { name: 'item_name', label: 'Jenis Barang', req: true, list: names, placeholder: 'pilih atau ketik, mis. Booklet' },
       { name: 'specification', label: 'Spesifikasi Incoming Material', placeholder: 'mis. ukuran / gramasi / warna (boleh kosong)' },
+      { name: 'source', label: 'Asal Barang', type: 'select', noEmpty: true, default: 'PI', disabled: !!row,
+        options: [{ v: 'PI', l: 'Datang per PI (diterima di Gudang)' }, { v: 'STOCK', l: 'Dari Stok Gudang (tanpa penerimaan)' }],
+        help: 'Pilih "Dari Stok Gudang" untuk barang umum yang sudah ada stoknya (mis. magnet, plat, paper).' },
+      { name: 'needs_qc', label: 'Perlu QC saat diterima?', type: 'select', noEmpty: true, default: 'Y', showIf: notStock,
+        options: [{ v: 'Y', l: 'Ya, lewat QC' }, { v: 'N', l: 'Tidak, langsung dianggap GOOD (barang jadi/pendukung)' }] },
+      { name: 'qty_need', label: 'Qty Kebutuhan untuk PI Ini (pcs)', type: 'number', req: true, min: 0.01, showIf: v => v.source === 'STOCK' },
       { name: 'leaves_per_book', label: 'Isi per Filter Book (leaves)', type: 'number', min: 1, req: true, list: ['32', '33', '40', '50', '60'],
         placeholder: 'mis. 32', showIf: v => isFilterBook(v.item_name), help: '1 leaf = 1 pcs kiri + 1 pcs kanan yang dilem. Isi jumlah leaves per 1 filter book jadi.' },
-      ...UNIT_FIELDS,
-      { name: 'qty_po', label: 'Qty PO (barang masuk dari supplier)', type: 'number', req: true, min: 0.01, u: true },
-      { name: 'qty_pi', label: 'Qty PI (target barang jadi)', type: 'number', min: 1, half: true, placeholder: 'mis. 1000',
+      ...UNIT_FIELDS.map(f => ({ ...f, showIf: v => notStock(v) && (f.showIf ? f.showIf(v) : true) })),
+      { name: 'qty_po', label: 'Qty PO (barang masuk dari supplier)', type: 'number', req: true, min: 0.01, u: true, showIf: notStock },
+      { name: 'qty_pi', label: 'Qty PI (target barang jadi)', type: 'number', min: 1, half: true, placeholder: 'mis. 1000', showIf: notStock,
         help: 'Jumlah barang jadi sesuai PI (booklet / cones / filter book). Dasar batas request Produksi.' },
-      { name: 'isi_per_display', label: 'Isi per Display', type: 'number', min: 1, half: true, default: 25, showIf: v => !isDisplayItem(v.item_name), help: '25 booklet per display; 24 bila memakai Filter Book.' },
-      { name: 'sample_display', label: 'Display untuk Sample', type: 'number', min: 0, half: true, default: 2 },
+      { name: 'isi_per_display', label: 'Isi per Display', type: 'number', min: 1, half: true, default: 25, showIf: v => notStock(v) && !isDisplayItem(v.item_name), help: '25 booklet per display; 24 bila memakai Filter Book.' },
+      { name: 'sample_display', label: 'Display untuk Sample', type: 'number', min: 0, half: true, default: 2, showIf: notStock },
       ...(isAdmin() ? [{ name: 'req_extra', label: 'Izin Tambahan Request (pcs, Admin)', type: 'number', min: 0, half: true, default: 0, help: 'Hanya Admin. Tambahan di luar Qty PI + sample, bila Produksi memang perlu lebih.' }] : [])
     ],
-    values: row ? { ...row, pps: row.pcs_per_sheet, qty_po: sheet ? row.qty_po_input : row.qty_po } : (pre || null),
+    values: row ? { ...row, pps: row.pcs_per_sheet, qty_po: sheet ? row.qty_po_input : row.qty_po, qty_need: row.qty_po, needs_qc: row.needs_qc === false ? 'N' : 'Y' } : (pre || null),
     keepUnit: !!row,
     submit2: row ? null : 'Simpan & Tambah Item Lain di PI Ini',
     onInput: (v, hint) => {
+      if (v.source === 'STOCK') {
+        const st = stockOf(v), bal = st ? Number(st.balance) : 0, need = v.qty_need || 0;
+        return hint(`Stok gudang <b>${esc(v.item_name || '…')}</b> ${esc(v.specification || '')}: <b>${num(bal)}</b> pcs (dipakai bersama semua PI)` +
+          (st ? '' : '<br>⚠ Barang ini belum ada di Stok Gudang. Tambahkan stoknya di menu Gudang → Stok Gudang.') +
+          (need > bal ? `<br>⚠ Kebutuhan melebihi stok sebanyak ${num(need - bal)} pcs.` : ''), need > bal || !st ? 'warn' : 'info');
+      }
       const fb = isFilterBook(v.item_name), L = Number(v.leaves_per_book), k = Number(v.pps);
       let lim = '';
       if (v.qty_pi > 0) {
@@ -508,7 +549,14 @@ async function poForm(row, rl, pre) {
       for (const [lbl, val, ex] of fresh) {
         if (!(await ask(`${lbl} "${val}" belum ada di daftar master. Simpan sebagai ${lbl.toLowerCase()} baru?\n\nYang sudah ada: ${ex.slice(0, 12).join(', ') || '-'}`, 'Ya, Simpan'))) throw new Error('Dibatalkan. Pilih ' + lbl.toLowerCase() + ' dari daftar atau perbaiki ejaannya.');
       }
-      await save('po_items', {
+      const stk = v.source === 'STOCK';
+      await save('po_items', stk ? {
+        pi_no: v.pi_no, brand: v.brand, item_name: v.item_name, specification: v.specification || '',
+        source: 'STOCK', needs_qc: true, leaves_per_book: null, qty_po: v.qty_need, unit: 'PCS', pcs_per_sheet: null, qty_po_input: null,
+        qty_pi: null, isi_per_display: null, sample_display: 2,
+        ...(isAdmin() ? { req_extra: v.req_extra || 0 } : {})
+      } : {
+        source: 'PI', needs_qc: v.needs_qc !== 'N',
         pi_no: v.pi_no, brand: v.brand, item_name: v.item_name, specification: v.specification || '',
         leaves_per_book: isFilterBook(v.item_name) ? v.leaves_per_book : null,
         qty_po: v.qty_po, unit: v.unit, pcs_per_sheet: v.unit === 'SHEET' ? v.pps : null, qty_po_input: v.raw.qty_po,
@@ -527,7 +575,7 @@ async function poForm(row, rl, pre) {
 }
 
 async function receiptForm(row, rl) {
-  const pos = groupSort(await q('v_po_summary'));
+  const pos = groupSort(await q('v_po_summary')).filter(p => p.source !== 'STOCK');
   if (!pos.length) return toast('Buat data PI terlebih dahulu di tab "Data PI".', 'err');
   const by = Object.fromEntries(pos.map(p => [p.id, p]));
   const sheet = !!row && row.unit === 'SHEET';
@@ -803,7 +851,7 @@ async function returnForm(row, pre, rl) {
 
 async function fgForm(row, rl) {
   const pos = groupSort(await q('v_po_summary'));
-  const list = row ? pos.filter(p => p.id === row.po_item_id) : pos.filter(p => Number(p.supplied_total) > 0);
+  const list = row ? pos.filter(p => p.id === row.po_item_id) : pos.filter(p => p.source !== 'STOCK' && Number(p.supplied_total) > 0);
   if (!list.length) return toast('Belum ada material yang dikirim ke produksi.', 'err');
   const by = Object.fromEntries(list.map(p => [p.id, p]));
   openForm({
@@ -963,12 +1011,34 @@ const DEFS = {
         },
         cols: [
           { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' }, { label: 'Spesifikasi', k: 'specification' },
-          { label: 'Satuan PO', k: 'po_input' }, { label: 'Isi Filter Book', k: 'lpb_text' }, { label: 'Qty PO (pcs)', k: 'qty_po', t: 'n', cls: 'num' }, { label: 'Qty PI', k: 'qty_pi', t: 'n', cls: 'num' }, { label: 'Batas Request (pcs)', k: 'req_limit', t: 'n', cls: 'num' }, { label: 'Total Incoming', k: 'total_incoming', t: 'n', cls: 'num' },
+          { label: 'Asal', f: p => p.source === 'STOCK' ? '<span class="pill gray">Stok Gudang</span>' : (p.needs_qc === false ? '<span class="pill gray">Tanpa QC</span>' : '<span class="mut">Per PI</span>') }, { label: 'Satuan PO', k: 'po_input' }, { label: 'Isi Filter Book', k: 'lpb_text' }, { label: 'Qty PO (pcs)', k: 'qty_po', t: 'n', cls: 'num' }, { label: 'Qty PI', k: 'qty_pi', t: 'n', cls: 'num' }, { label: 'Batas Request (pcs)', k: 'req_limit', t: 'n', cls: 'num' }, { label: 'Total Incoming', k: 'total_incoming', t: 'n', cls: 'num' },
           { label: 'Balance', k: 'balance_po', t: 'b', cls: 'num' }
         ],
         add: { label: 'PI / Item Baru', stage: 'gudang', run: rl => poForm(null, rl) },
         acts: r => (can('gudang') ? [{ key: 'item', label: '+ Item', icon: 'plus', text: true, run: rl => poForm(null, rl, { pi_no: r.pi_no, brand: r.brand }) }] : [])
           .concat(stdActs('po_items', 'gudang', (x, rl) => poForm(x, rl))(r))
+      },
+      {
+        id: 'stok', label: 'Stok Gudang',
+        load: () => q('v_stock', [['item_name', true]]),
+        cols: [
+          { label: 'Jenis Barang', k: 'item_name', cls: 'strong' }, { label: 'Spesifikasi', k: 'specification' },
+          { label: 'Total Masuk / Stok Awal', k: 'stock_in', t: 'n', cls: 'num' }, { label: 'Dikirim ke Produksi', k: 'stock_out', t: 'n', cls: 'num' },
+          { label: 'Kebutuhan PI (total)', k: 'need_total', t: 'n', cls: 'num' }, { label: 'Saldo Stok', k: 'balance', t: 'b', cls: 'num' }
+        ],
+        add: { label: 'Tambah Stok', stage: 'gudang', run: rl => stockForm(null, rl) },
+        acts: () => []
+      },
+      {
+        id: 'stokrw', label: 'Riwayat Stok',
+        load: () => q('stock_ledger', [['entry_date', false], ['created_at', false]]),
+        cols: [
+          { label: 'Tanggal', k: 'entry_date', t: 'd' }, { label: 'Jenis Barang', k: 'item_name', cls: 'strong' }, { label: 'Spesifikasi', k: 'specification' },
+          { label: 'Jenis', f: r => ({ OPENING: 'Stok Awal', IN: 'Barang Masuk', ADJUST: 'Koreksi' }[r.kind] || r.kind) },
+          { label: 'Qty', k: 'qty', t: 'n', cls: 'num' }, { label: 'Catatan', k: 'notes' }
+        ],
+        add: { label: 'Tambah Stok', stage: 'gudang', run: rl => stockForm(null, rl) },
+        acts: stdActs('stock_ledger', 'gudang', (r, rl) => stockForm(r, rl))
       }
     ]
   }),
@@ -1108,6 +1178,15 @@ const DEFS = {
         acts: stdActs('supply_returns', 'supply', (r, rl) => returnForm(r, null, rl))
       },
       {
+        id: 'pool', label: 'Stok Gudang (Umum)',
+        load: () => q('v_stock', [['item_name', true]]),
+        cols: [
+          { label: 'Jenis Barang', k: 'item_name', cls: 'strong' }, { label: 'Spesifikasi', k: 'specification' },
+          { label: 'Total Masuk / Stok Awal', k: 'stock_in', t: 'n', cls: 'num' }, { label: 'Dikirim', k: 'stock_out', t: 'n', cls: 'num' }, { label: 'Saldo Stok', k: 'balance', t: 'b', cls: 'num' }
+        ],
+        acts: () => []
+      },
+      {
         id: 'stock', label: 'Stok Siap Kirim',
         load: async () => (await q('v_po_summary', [['pi_no', true]])).filter(p => Number(p.good_ready) > 0),
         cols: [
@@ -1166,7 +1245,7 @@ const DEFS = {
       },
       {
         id: 'bal', label: 'Saldo per PI',
-        load: async () => (await q('v_po_summary', [['pi_no', true]])).filter(p => Number(p.supplied_total) > 0),
+        load: async () => (await q('v_po_summary', [['pi_no', true]])).filter(p => p.source !== 'STOCK' && Number(p.supplied_total) > 0),
         cols: [
           { label: 'PI No', k: 'pi_no', cls: 'strong' }, { label: 'Brand', k: 'brand' }, { label: 'Jenis Barang', k: 'item_name' },
           { label: 'Material di Produksi', k: 'at_production', t: 'n', cls: 'num' },
@@ -1227,6 +1306,11 @@ async function renderSegPage(view, def) {
 /* Status item PI. Selesai = barang jadi sudah mencapai Qty PI (item lama tanpa Qty PI: semua material terpakai & tidak ada yang menunggu) */
 function itemStatus(p) {
   const n = k => Number(p[k] || 0), fgTarget = p.qty_pi != null ? Number(p.qty_pi) : null;
+  if (p.source === 'STOCK') {
+    const net = n('supplied_total') - n('returned_total');
+    if (net >= n('qty_po')) return { done: true, label: 'Selesai', tone: 'ok' };
+    return { done: false, label: n('supplied_total') > 0 ? 'Terkirim sebagian dari stok' : 'Menunggu dikirim dari stok', tone: 'warn' };
+  }
   const done = fgTarget != null ? n('fg_booklet') >= fgTarget
     : n('total_incoming') >= n('qty_po') && n('supplied_total') > 0 && n('fg_balance') <= 0 && n('qc_pending') <= 0 && n('dc_waiting') <= 0 && n('qc2_pending') <= 0;
   if (done) return { done: true, label: 'Selesai', tone: 'ok' };
@@ -1247,7 +1331,20 @@ function groupHTML(rows) {
     <div class="po-grid">${items.map(poCard).join('')}</div></section>`).join('');
 }
 
+function stockCard(p) {
+  const s = itemStatus(p), need = Number(p.qty_po), net = Number(p.supplied_total) - Number(p.returned_total);
+  return `<div class="po">
+    <div class="po-h"><div><b>${esc(p.item_name || p.pi_no)}</b><small>PI ${esc(p.pi_no)}${p.specification ? ' · ' + esc(p.specification) : ''}</small></div>
+      <div><span class="pill ${s.tone}">${s.label}</span> <span class="pill gray">Dari Stok</span></div></div>
+    <div class="stages">
+      <div class="st g"><em>Kebutuhan PI</em><strong>${num(need)}</strong><div class="bar"><i style="width:${need ? Math.min(100, net / need * 100) : 0}%"></i></div><small>terkirim ${num(net)} · sisa ${num(Math.max(0, need - net))}</small></div>
+      <div class="st s"><em>Stok Gudang</em><strong>${num(p.stock_ready)} <span style="font-size:12px;font-weight:600">saldo</span></strong><small>dipakai bersama semua PI</small></div>
+      <div class="st f"><em>Supply</em><strong>${num(p.at_production)} <span style="font-size:12px;font-weight:600">di produksi</span></strong><small>Kirim ${num(p.supplied_total)} · retur ${num(p.returned_total)}</small></div>
+    </div></div>`;
+}
+
 function poCard(p) {
+  if (p.source === 'STOCK') return stockCard(p);
   const pct = Number(p.qty_po) ? Math.min(100, Number(p.total_incoming) / Number(p.qty_po) * 100) : 0;
   return `<div class="po">
     <div class="po-h"><div><b>${esc(p.item_name || p.specification || p.pi_no)}</b><small>PI ${esc(p.pi_no)}${p.item_name && p.specification ? ' · ' + esc(p.specification) : ''}</small></div>
@@ -1314,7 +1411,7 @@ async function loadReport() {
     let cum = 0, cumBook = 0;
     for (let i = 0; i < n; i++) {
       const r = R[i], s = I[i], f = F[i];
-      const row = { no: i === 0 && newPi ? piNo : null, newPi: i === 0 && newPi, pi_no: p.pi_no, brand: p.brand, item: p.item_name + (p.leaves_per_book ? ` (${num(p.leaves_per_book)} leaves)` : ''), spec: p.specification,
+      const row = { no: i === 0 && newPi ? piNo : null, newPi: i === 0 && newPi, pi_no: p.pi_no, brand: p.brand, item: p.item_name + (p.leaves_per_book ? ` (${num(p.leaves_per_book)} leaves)` : '') + (p.source === 'STOCK' ? ' (dari stok)' : ''), spec: p.specification,
         qty_po: i === 0 ? p.qty_po : null, qty_pi: i === 0 ? p.qty_pi : null, first: i === 0,
         st_item: i === 0 ? itemStatus(p).label : null,
         st_pi: i === 0 && newPi ? (piDone(piItems[key]) ? 'PI SELESAI' : `BERJALAN (${piItems[key].filter(x => itemStatus(x).done).length}/${piItems[key].length} item selesai)`) : null };
@@ -1326,7 +1423,7 @@ async function loadReport() {
         if (r.unit === 'SHEET') Object.assign(row, { dc_sheets: r.dc_sheets, dc_out: r.dc_qty_out,
           dc_bal: Number(r.pcs_per_sheet) > 0 ? Number(r.dc_waiting) / Number(r.pcs_per_sheet) : 0,
           qc2_good: r.qc2_good, qc2_ng: r.qc2_ng, qc2_desc: (qc2By[r.id] || []).map(x => x.description).filter(Boolean).join('; '), qc2_bal: r.qc2_waiting });
-      } else if (i === 0) { Object.assign(row, { total_in: 0, bal_po: Number(p.qty_po) }); }
+      } else if (i === 0 && p.source !== 'STOCK') { Object.assign(row, { total_in: 0, bal_po: Number(p.qty_po) }); }
       if (s) {
         const rr = retBy[s.id] || [];
         Object.assign(row, { req_date: s.request_date, sent: s.qty_sent, ret_date: rr.length ? rr[rr.length - 1].return_date : null,
@@ -1433,7 +1530,7 @@ function rekapRows(rows) {
     const key = (p.item_name || '').trim().toLowerCase();
     if (!m.has(key)) m.set(key, { name: (p.item_name || '').trim() || '(belum diisi jenis barang)', n: 0 });
     const g = m.get(key); g.n++;
-    REKAP_COLS.forEach(c => { if (c.k !== 'name' && c.k !== 'n') g[c.k] = (g[c.k] || 0) + Number(p[c.k] || 0); });
+    REKAP_COLS.forEach(c => { if (c.k !== 'name' && c.k !== 'n') g[c.k] = (g[c.k] || 0) + (p.source === 'STOCK' && c.k === 'stock_ready' ? 0 : Number(p[c.k] || 0)); });
   });
   const out = [...m.values()].sort((x, y) => x.name.localeCompare(y.name));
   const tot = { name: 'TOTAL', n: 0 };
@@ -1480,7 +1577,7 @@ async function renderSummary(view) {
   view.innerHTML = '<div class="loading"><span class="spin"></span>Memuat data…</div>';
   let rows;
   try { rows = await q('v_po_summary'); } catch (e) { view.insertAdjacentHTML('beforeend', ''); view.querySelector('.loading').outerHTML = `<div class="errbox">${esc(errMsg(e))}</div>`; return; }
-  const sum = k => rows.reduce((a, r) => a + Number(r[k] || 0), 0);
+  const sum = k => rows.filter(r => r.source !== 'STOCK').reduce((a, r) => a + Number(r[k] || 0), 0);
   const grp = piGroups(rows), nDone = grp.filter(piDone).length;
   const kp = [['PI Berjalan', grp.length - nDone, 'q'], ['PI Selesai', nDone, 'f'], ['Total Incoming', num(sum('total_incoming')), 'g'], ['Menunggu QC', num(sum('qc_pending')), 'q'], ['Menunggu Diecut', num(sum('dc_waiting')), 'd'], ['Menunggu QC Ulang', num(sum('qc2_pending')), 'q'],
     ['Good', num(sum('good_total')), 'q'], ['NG', num(sum('ng_total')), 'r'], ['Stok Siap Kirim', num(sum('stock_ready')), 's'],
